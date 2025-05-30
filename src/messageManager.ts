@@ -84,7 +84,7 @@ export class MessageManager {
     try {
       let imageUrl: string | null = null;
 
-      logger.info(`Telegram Message: ${message}`);
+      logger.info(`Telegram Message: ${JSON.stringify(message, null, 2)}`);
 
       if ('photo' in message && message.photo?.length > 0) {
         const photo = message.photo[message.photo.length - 1];
@@ -305,12 +305,10 @@ export class MessageManager {
         return;
       }
       // Generate room ID based on whether this is in a forum topic
-      const roomId = createUniqueUuid(
-        this.runtime,
-        threadId ? `${ctx.chat.id}-${threadId}` : ctx.chat.id.toString()
-      ) as UUID;
+      const telegramRoomid = threadId ? `${ctx.chat.id}-${threadId}` : ctx.chat.id.toString()
+      const roomId = createUniqueUuid(this.runtime, telegramRoomid) as UUID;
 
-      // Get message ID
+      // Get message ID (unique to channel)
       const messageId = createUniqueUuid(this.runtime, message?.message_id?.toString());
 
       // Handle images
@@ -332,6 +330,19 @@ export class MessageManager {
       const chat = message.chat as Chat;
       const channelType = getChannelType(chat);
 
+      await this.runtime.ensureConnection({
+        entityId,
+        roomId,
+        userName: ctx.from.username,
+        name: ctx.from.first_name,
+        source: 'telegram',
+        channelId: telegramRoomid,
+        serverId: undefined,
+        type: channelType,
+        worldId: createUniqueUuid(this.runtime, roomId) as UUID,
+        worldName: telegramRoomid,
+      });
+
       // Create the memory object
       const memory: Memory = {
         id: messageId,
@@ -340,12 +351,24 @@ export class MessageManager {
         roomId,
         content: {
           text: fullText,
+          // attachments?
           source: 'telegram',
           channelType: channelType,
           inReplyTo:
             'reply_to_message' in message && message.reply_to_message
               ? createUniqueUuid(this.runtime, message.reply_to_message.message_id.toString())
               : undefined,
+        },
+        metadata: {
+          entityName: ctx.from.first_name,
+          entityUserName: ctx.from.username,
+          fromBot: ctx.from.is_bot,
+          // include very technical/exact reference to this user for security reasons
+          // don't remove or change this, spartan needs this
+          fromId: chat.id,
+          // why message? all Memories contain content (which is basically a message)
+          // what are the other types?
+          type: 'message',
         },
         createdAt: message.date * 1000,
       };
@@ -356,9 +379,19 @@ export class MessageManager {
           // If response is from reasoning do not send it.
           if (!content.text) return [];
 
-          const sentMessages = await this.sendMessageInChunks(ctx, content, message.message_id);
+          let sentMessages: boolean | Message.TextMessage[] = false
+          if (content?.source === 'DM') {
+            sentMessages = []
+            if (ctx.from) {
+              // FIXME split on 4096 chars
+              const res = await this.bot.telegram.sendMessage(ctx.from.id, content.text);
+              sentMessages.push(res)
+            }
+          } else {
+            sentMessages = await this.sendMessageInChunks(ctx, content, message.message_id);
+          }
 
-          if (!sentMessages) return [];
+          if (!Array.isArray(sentMessages)) return [];
 
           const memories: Memory[] = [];
           for (let i = 0; i < sentMessages.length; i++) {
