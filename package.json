@@ -1,6 +1,6 @@
 {
   "name": "@elizaos/plugin-telegram",
-  "version": "1.0.0-beta.54",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -18,7 +18,7 @@
     "dist"
   ],
   "dependencies": {
-    "@elizaos/core": "^1.0.0-beta.52",
+    "@elizaos/core": "^1.0.0",
     "@telegraf/types": "7.1.0",
     "strip-literal": "^3.0.0",
     "telegraf": "4.16.3",
@@ -46,6 +46,6 @@
   "gitHead": "646c632924826e2b75c2304a75ee56959fe4a460",
   "repository": {
     "type": "git",
-    "url": "https://github.com/elizaos-plugins/plugin-telegram.git"
+    "url": "git+https://github.com/elizaos-plugins/plugin-telegram.git"
   }
 }
