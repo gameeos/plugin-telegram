@@ -380,7 +380,7 @@ export class MessageManager {
           if (!content.text) return [];
 
           let sentMessages: boolean | Message.TextMessage[] = false
-          if (content?.source === 'DM') {
+          if (content?.target === 'DM') {
             sentMessages = []
             if (ctx.from) {
               // FIXME split on 4096 chars
