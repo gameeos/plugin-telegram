@@ -330,6 +330,8 @@ export class MessageManager {
       const chat = message.chat as Chat;
       const channelType = getChannelType(chat);
 
+      const sourceId = createUniqueUuid(this.runtime, '' + chat.id);
+
       await this.runtime.ensureConnection({
         entityId,
         roomId,
@@ -352,10 +354,11 @@ export class MessageManager {
         content: {
           text: fullText,
           // attachments?
-          source: 'telegram',
+          source: "telegram",
+          // url?
           channelType: channelType,
           inReplyTo:
-            'reply_to_message' in message && message.reply_to_message
+            "reply_to_message" in message && message.reply_to_message
               ? createUniqueUuid(this.runtime, message.reply_to_message.message_id.toString())
               : undefined,
         },
@@ -366,9 +369,11 @@ export class MessageManager {
           // include very technical/exact reference to this user for security reasons
           // don't remove or change this, spartan needs this
           fromId: chat.id,
+          sourceId,
           // why message? all Memories contain content (which is basically a message)
-          // what are the other types?
-          type: 'message',
+          // what are the other types? see MemoryType
+          type: "message", // MemoryType.MESSAGE
+          // scope: `shared`, `private`, or `room`
         },
         createdAt: message.date * 1000,
       };
@@ -380,7 +385,8 @@ export class MessageManager {
           if (!content.text) return [];
 
           let sentMessages: boolean | Message.TextMessage[] = false
-          if (content?.target === 'DM') {
+          // channelType target === 'telegram'
+          if (content?.channelType === 'DM') {
             sentMessages = []
             if (ctx.from) {
               // FIXME split on 4096 chars
@@ -396,7 +402,7 @@ export class MessageManager {
           const memories: Memory[] = [];
           for (let i = 0; i < sentMessages.length; i++) {
             const sentMessage = sentMessages[i];
-            const _isLastMessage = i === sentMessages.length - 1;
+            //const _isLastMessage = i === sentMessages.length - 1;
 
             const responseMemory: Memory = {
               id: createUniqueUuid(this.runtime, sentMessage.message_id.toString()),
