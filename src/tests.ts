@@ -4,6 +4,8 @@ import type { Telegraf } from 'telegraf';
 import type { Context } from 'telegraf';
 import type { MessageManager } from './messageManager';
 import type { TelegramService } from './service';
+import type { TelegramContent, } from './types';
+
 
 const TEST_IMAGE_URL =
   'https://github.com/elizaOS/awesome-eliza/blob/main/assets/eliza-logo.jpg?raw=true';
@@ -143,7 +145,7 @@ export class TelegramTestSuite implements TestSuite {
         ],
       };
 
-      await this.messageManager.sendMessageInChunks(mockContext as Context, messageContent);
+      await this.messageManager.sendMessageInChunks(mockContext as Context, messageContent as TelegramContent);
 
       logger.success('Message with image attachment sent successfully.');
     } catch (error) {
