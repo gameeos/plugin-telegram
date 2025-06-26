@@ -74,14 +74,14 @@ export function convertMarkdownToTelegram(markdown: string): string {
 
   // 1. Fenced code blocks (```...```)
   //    Matches an optional language (letters only) and then any content until the closing ```
-  converted = converted.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+  converted = converted.replace(/```(\w+)?\n([\s\S]*?)```/g, (_match, lang, code) => {
     const escapedCode = escapeCode(code);
     const formatted = '```' + (lang || '') + '\n' + escapedCode + '```';
     return storeReplacement(formatted);
   });
 
   // 2. Inline code (`...`)
-  converted = converted.replace(/`([^`]+)`/g, (match, code) => {
+  converted = converted.replace(/`([^`]+)`/g, (_match, code) => {
     const escapedCode = escapeCode(code);
     const formatted = '`' + escapedCode + '`';
     return storeReplacement(formatted);
@@ -90,7 +90,7 @@ export function convertMarkdownToTelegram(markdown: string): string {
   // 3. Links: [link text](url)
   converted = converted.replace(
     /$begin:math:display$([^$end:math:display$]+)]$begin:math:text$([^)]+)$end:math:text$/g,
-    (match, text, url) => {
+    (_match, text, url) => {
       // For link text we escape as plain text.
       const formattedText = escapePlainText(text);
       const escapedURL = escapeUrl(url);
@@ -101,7 +101,7 @@ export function convertMarkdownToTelegram(markdown: string): string {
 
   // 4. Bold text: standard markdown bold **text**
   //    Telegram bold is delimited by single asterisks: *text*
-  converted = converted.replace(/\*\*([^*]+)\*\*/g, (match, content) => {
+  converted = converted.replace(/\*\*([^*]+)\*\*/g, (_match, content) => {
     const formattedContent = escapePlainText(content);
     const formatted = `*${formattedContent}*`;
     return storeReplacement(formatted);
@@ -109,7 +109,7 @@ export function convertMarkdownToTelegram(markdown: string): string {
 
   // 5. Strikethrough: standard markdown uses ~~text~~,
   //    while Telegram uses ~text~
-  converted = converted.replace(/~~([^~]+)~~/g, (match, content) => {
+  converted = converted.replace(/~~([^~]+)~~/g, (_match, content) => {
     const formattedContent = escapePlainText(content);
     const formatted = `~${formattedContent}~`;
     return storeReplacement(formatted);
@@ -120,13 +120,13 @@ export function convertMarkdownToTelegram(markdown: string): string {
   //    In Telegram MarkdownV2 italic must be delimited by underscores.
   //    Process asterisk-based italic first.
   //    (Using negative lookbehind/lookahead to avoid matching bold **)
-  converted = converted.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, (match, content) => {
+  converted = converted.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, (_match, content) => {
     const formattedContent = escapePlainText(content);
     const formatted = `_${formattedContent}_`;
     return storeReplacement(formatted);
   });
   //    Then underscore-based italic.
-  converted = converted.replace(/_([^_\n]+)_/g, (match, content) => {
+  converted = converted.replace(/_([^_\n]+)_/g, (_match, content) => {
     const formattedContent = escapePlainText(content);
     const formatted = `_${formattedContent}_`;
     return storeReplacement(formatted);
@@ -135,7 +135,7 @@ export function convertMarkdownToTelegram(markdown: string): string {
   // 7. Headers: Convert markdown headers (lines starting with '#' characters)
   //    to bold text. This avoids unescaped '#' characters (which crash Telegram)
   //    by removing them and wrapping the rest of the line in bold markers.
-  converted = converted.replace(/^(#{1,6})\s*(.*)$/gm, (match, hashes, headerContent: string) => {
+  converted = converted.replace(/^(#{1,6})\s*(.*)$/gm, (_match, _hashes, headerContent: string) => {
     // Remove any trailing whitespace and escape the header text.
     const formatted = `*${escapePlainText(headerContent.trim())}*`;
     return storeReplacement(formatted);
