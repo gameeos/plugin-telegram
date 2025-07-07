@@ -10,32 +10,30 @@ import {
   type UUID,
   createUniqueUuid,
   logger,
-} from '@elizaos/core';
-import type { Chat, Message, ReactionType, Update } from '@telegraf/types';
-import type { Context, NarrowedContext, Telegraf } from 'telegraf';
-import { Markup } from 'telegraf';
+} from "@elizaos/core";
+import type { Chat, Message, ReactionType, Update } from "@telegraf/types";
+import type { Context, NarrowedContext, Telegraf } from "telegraf";
+import { Markup } from "telegraf";
 import {
   TelegramContent,
   TelegramEventTypes,
   type TelegramMessageReceivedPayload,
   type TelegramMessageSentPayload,
   type TelegramReactionReceivedPayload,
-} from './types';
-import { convertToTelegramButtons, convertMarkdownToTelegram } from './utils';
-
-import fs from 'node:fs';
-
+} from "./types";
+import { convertToTelegramButtons, convertMarkdownToTelegram } from "./utils";
+import fs from "fs";
 /**
  * Enum representing different types of media.
  * @enum { string }
  * @readonly
  */
 export enum MediaType {
-  PHOTO = 'photo',
-  VIDEO = 'video',
-  DOCUMENT = 'document',
-  AUDIO = 'audio',
-  ANIMATION = 'animation',
+  PHOTO = "photo",
+  VIDEO = "video",
+  DOCUMENT = "document",
+  AUDIO = "audio",
+  ANIMATION = "animation",
 }
 
 const MAX_MESSAGE_LENGTH = 4096; // Telegram's max message length
@@ -43,11 +41,11 @@ const MAX_MESSAGE_LENGTH = 4096; // Telegram's max message length
 const getChannelType = (chat: Chat): ChannelType => {
   // Use a switch statement for clarity and exhaustive checks
   switch (chat.type) {
-    case 'private':
+    case "private":
       return ChannelType.DM;
-    case 'group':
-    case 'supergroup':
-    case 'channel':
+    case "group":
+    case "supergroup":
+    case "channel":
       return ChannelType.GROUP;
     default:
       throw new Error(`Unrecognized Telegram chat type: ${(chat as any).type}`);
@@ -80,30 +78,37 @@ export class MessageManager {
    * @param {Message} message - The Telegram message object containing the image.
    * @returns {Promise<{ description: string } | null>} The description of the processed image or null if no image found.
    */
-  async processImage(message: Message): Promise<{ description: string } | null> {
+  async processImage(
+    message: Message,
+  ): Promise<{ description: string } | null> {
     try {
       let imageUrl: string | null = null;
 
       logger.info(`Telegram Message: ${JSON.stringify(message, null, 2)}`);
 
-      if ('photo' in message && message.photo?.length > 0) {
+      if ("photo" in message && message.photo?.length > 0) {
         const photo = message.photo[message.photo.length - 1];
         const fileLink = await this.bot.telegram.getFileLink(photo.file_id);
         imageUrl = fileLink.toString();
-      } else if ('document' in message && message.document?.mime_type?.startsWith('image/')) {
-        const fileLink = await this.bot.telegram.getFileLink(message.document.file_id);
+      } else if (
+        "document" in message &&
+        message.document?.mime_type?.startsWith("image/")
+      ) {
+        const fileLink = await this.bot.telegram.getFileLink(
+          message.document.file_id,
+        );
         imageUrl = fileLink.toString();
       }
 
       if (imageUrl) {
         const { title, description } = await this.runtime.useModel(
           ModelType.IMAGE_DESCRIPTION,
-          imageUrl
+          imageUrl,
         );
         return { description: `[Image: ${title}\n${description}]` };
       }
     } catch (error) {
-      console.error('❌ Error processing image:', error);
+      console.error("❌ Error processing image:", error);
     }
 
     return null;
@@ -121,12 +126,12 @@ export class MessageManager {
   async sendMessageInChunks(
     ctx: Context,
     content: TelegramContent,
-    replyToMessageId?: number
+    replyToMessageId?: number,
   ): Promise<Message.TextMessage[]> {
     if (content.attachments && content.attachments.length > 0) {
       content.attachments.map(async (attachment: Media) => {
         const typeMap: { [key: string]: MediaType } = {
-          'image/gif': MediaType.ANIMATION,
+          "image/gif": MediaType.ANIMATION,
           image: MediaType.PHOTO,
           doc: MediaType.DOCUMENT,
           video: MediaType.VIDEO,
@@ -144,37 +149,48 @@ export class MessageManager {
 
         if (!mediaType) {
           throw new Error(
-            `Unsupported Telegram attachment content type: ${attachment.contentType}`
+            `Unsupported Telegram attachment content type: ${attachment.contentType}`,
           );
         }
 
-        await this.sendMedia(ctx, attachment.url, mediaType, attachment.description);
+        await this.sendMedia(
+          ctx,
+          attachment.url,
+          mediaType,
+          attachment.description,
+        );
       });
       return [];
     } else {
-      const chunks = this.splitMessage(content.text ?? '');
+      const chunks = this.splitMessage(content.text ?? "");
       const sentMessages: Message.TextMessage[] = [];
 
       const telegramButtons = convertToTelegramButtons(content.buttons ?? []);
 
       if (!ctx.chat) {
-        logger.error('sendMessageInChunks: ctx.chat is undefined');
+        logger.error("sendMessageInChunks: ctx.chat is undefined");
         return [];
       }
-      await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
+      await ctx.telegram.sendChatAction(ctx.chat.id, "typing");
 
       for (let i = 0; i < chunks.length; i++) {
         const chunk = convertMarkdownToTelegram(chunks[i]);
         if (!ctx.chat) {
-          logger.error('sendMessageInChunks loop: ctx.chat is undefined');
+          logger.error("sendMessageInChunks loop: ctx.chat is undefined");
           continue;
         }
-        const sentMessage = (await ctx.telegram.sendMessage(ctx.chat.id, chunk, {
-          reply_parameters:
-            i === 0 && replyToMessageId ? { message_id: replyToMessageId } : undefined,
-          parse_mode: 'MarkdownV2',
-          ...Markup.inlineKeyboard(telegramButtons),
-        })) as Message.TextMessage;
+        const sentMessage = (await ctx.telegram.sendMessage(
+          ctx.chat.id,
+          chunk,
+          {
+            reply_parameters:
+              i === 0 && replyToMessageId
+                ? { message_id: replyToMessageId }
+                : undefined,
+            parse_mode: "MarkdownV2",
+            ...Markup.inlineKeyboard(telegramButtons),
+          },
+        )) as Message.TextMessage;
 
         sentMessages.push(sentMessage);
       }
@@ -197,7 +213,7 @@ export class MessageManager {
     ctx: Context,
     mediaPath: string,
     type: MediaType,
-    caption?: string
+    caption?: string,
   ): Promise<void> {
     try {
       const isUrl = /^(http|https):\/\//.test(mediaPath);
@@ -216,7 +232,7 @@ export class MessageManager {
       }
 
       if (!ctx.chat) {
-        throw new Error('sendMedia: ctx.chat is undefined');
+        throw new Error("sendMedia: ctx.chat is undefined");
       }
 
       if (isUrl) {
@@ -232,7 +248,7 @@ export class MessageManager {
 
         try {
           if (!ctx.chat) {
-            throw new Error('sendMedia (file): ctx.chat is undefined');
+            throw new Error("sendMedia (file): ctx.chat is undefined");
           }
           await sendFunction(ctx.chat.id, { source: fileStream }, { caption });
         } finally {
@@ -241,13 +257,17 @@ export class MessageManager {
       }
 
       logger.info(
-        `${type.charAt(0).toUpperCase() + type.slice(1)} sent successfully: ${mediaPath}`
+        `${type.charAt(0).toUpperCase() + type.slice(1)} sent successfully: ${mediaPath}`,
       );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`Failed to send ${type}. Path: ${mediaPath}. Error: ${errorMessage}`, {
-        originalError: error,
-      });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        `Failed to send ${type}. Path: ${mediaPath}. Error: ${errorMessage}`,
+        {
+          originalError: error,
+        },
+      );
       throw error;
     }
   }
@@ -262,12 +282,12 @@ export class MessageManager {
   private splitMessage(text: string): string[] {
     const chunks: string[] = [];
     if (!text) return chunks;
-    let currentChunk = '';
+    let currentChunk = "";
 
-    const lines = text.split('\n');
+    const lines = text.split("\n");
     for (const line of lines) {
       if (currentChunk.length + line.length + 1 <= MAX_MESSAGE_LENGTH) {
-        currentChunk += (currentChunk ? '\n' : '') + line;
+        currentChunk += (currentChunk ? "\n" : "") + line;
       } else {
         if (currentChunk) chunks.push(currentChunk);
         currentChunk = line;
@@ -292,52 +312,62 @@ export class MessageManager {
 
     try {
       // Convert IDs to UUIDs
-      const entityId = createUniqueUuid(this.runtime, ctx.from.id.toString()) as UUID;
+      const entityId = createUniqueUuid(
+        this.runtime,
+        ctx.from.id.toString(),
+      ) as UUID;
 
       const threadId =
-        'is_topic_message' in message && message.is_topic_message
+        "is_topic_message" in message && message.is_topic_message
           ? message.message_thread_id?.toString()
           : undefined;
 
       // Add null check for ctx.chat
       if (!ctx.chat) {
-        logger.error('handleMessage: ctx.chat is undefined');
+        logger.error("handleMessage: ctx.chat is undefined");
         return;
       }
       // Generate room ID based on whether this is in a forum topic
-      const telegramRoomid = threadId ? `${ctx.chat.id}-${threadId}` : ctx.chat.id.toString()
+      const telegramRoomid = threadId
+        ? `${ctx.chat.id}-${threadId}`
+        : ctx.chat.id.toString();
       const roomId = createUniqueUuid(this.runtime, telegramRoomid) as UUID;
 
       // Get message ID (unique to channel)
-      const messageId = createUniqueUuid(this.runtime, message?.message_id?.toString());
+      const messageId = createUniqueUuid(
+        this.runtime,
+        message?.message_id?.toString(),
+      );
 
       // Handle images
       const imageInfo = await this.processImage(message);
 
       // Get message text - use type guards for safety
-      let messageText = '';
-      if ('text' in message && message.text) {
+      let messageText = "";
+      if ("text" in message && message.text) {
         messageText = message.text;
-      } else if ('caption' in message && message.caption) {
+      } else if ("caption" in message && message.caption) {
         messageText = message.caption as string;
       }
 
       // Combine text and image description
-      const fullText = imageInfo ? `${messageText} ${imageInfo.description}` : messageText;
+      const fullText = imageInfo
+        ? `${messageText} ${imageInfo.description}`
+        : messageText;
       if (!fullText) return;
 
       // Get chat type and determine channel type
       const chat = message.chat as Chat;
       const channelType = getChannelType(chat);
 
-      const sourceId = createUniqueUuid(this.runtime, '' + chat.id);
+      const sourceId = createUniqueUuid(this.runtime, "" + chat.id);
 
       await this.runtime.ensureConnection({
         entityId,
         roomId,
         userName: ctx.from.username,
         name: ctx.from.first_name,
-        source: 'telegram',
+        source: "telegram",
         channelId: telegramRoomid,
         serverId: undefined,
         type: channelType,
@@ -359,7 +389,10 @@ export class MessageManager {
           channelType: channelType,
           inReplyTo:
             "reply_to_message" in message && message.reply_to_message
-              ? createUniqueUuid(this.runtime, message.reply_to_message.message_id.toString())
+              ? createUniqueUuid(
+                  this.runtime,
+                  message.reply_to_message.message_id.toString(),
+                )
               : undefined,
         },
         metadata: {
@@ -379,22 +412,32 @@ export class MessageManager {
       };
 
       // Create callback for handling responses
-      const callback: HandlerCallback = async (content: Content, _files?: string[]) => {
+      const callback: HandlerCallback = async (
+        content: Content,
+        _files?: string[],
+      ) => {
         try {
           // If response is from reasoning do not send it.
           if (!content.text) return [];
 
-          let sentMessages: boolean | Message.TextMessage[] = false
+          let sentMessages: boolean | Message.TextMessage[] = false;
           // channelType target === 'telegram'
-          if (content?.channelType === 'DM') {
-            sentMessages = []
+          if (content?.channelType === "DM") {
+            sentMessages = [];
             if (ctx.from) {
               // FIXME split on 4096 chars
-              const res = await this.bot.telegram.sendMessage(ctx.from.id, content.text);
-              sentMessages.push(res)
+              const res = await this.bot.telegram.sendMessage(
+                ctx.from.id,
+                content.text,
+              );
+              sentMessages.push(res);
             }
           } else {
-            sentMessages = await this.sendMessageInChunks(ctx, content, message.message_id);
+            sentMessages = await this.sendMessageInChunks(
+              ctx,
+              content,
+              message.message_id,
+            );
           }
 
           if (!Array.isArray(sentMessages)) return [];
@@ -402,16 +445,18 @@ export class MessageManager {
           const memories: Memory[] = [];
           for (let i = 0; i < sentMessages.length; i++) {
             const sentMessage = sentMessages[i];
-            
 
             const responseMemory: Memory = {
-              id: createUniqueUuid(this.runtime, sentMessage.message_id.toString()),
+              id: createUniqueUuid(
+                this.runtime,
+                sentMessage.message_id.toString(),
+              ),
               entityId: this.runtime.agentId,
               agentId: this.runtime.agentId,
               roomId,
               content: {
                 ...content,
-                source: 'telegram',
+                source: "telegram",
                 text: sentMessage.text,
                 inReplyTo: messageId,
                 channelType: channelType,
@@ -419,13 +464,13 @@ export class MessageManager {
               createdAt: sentMessage.date * 1000,
             };
 
-            await this.runtime.createMemory(responseMemory, 'messages');
+            await this.runtime.createMemory(responseMemory, "messages");
             memories.push(responseMemory);
           }
 
           return memories;
         } catch (error) {
-          logger.error('Error in message callback:', error);
+          logger.error("Error in message callback:", error);
           return [];
         }
       };
@@ -435,7 +480,7 @@ export class MessageManager {
         runtime: this.runtime,
         message: memory,
         callback,
-        source: 'telegram',
+        source: "telegram",
       });
 
       // Also emit the platform-specific event
@@ -443,12 +488,12 @@ export class MessageManager {
         runtime: this.runtime,
         message: memory,
         callback,
-        source: 'telegram',
+        source: "telegram",
         ctx,
         originalMessage: message,
       } as TelegramMessageReceivedPayload);
     } catch (error) {
-      logger.error('Error handling Telegram message:', {
+      logger.error("Error handling Telegram message:", {
         error,
         chatId: ctx.chat?.id,
         messageId: ctx.message?.message_id,
@@ -464,7 +509,7 @@ export class MessageManager {
    * @returns {Promise<void>} A Promise that resolves when the reaction handling is complete
    */
   public async handleReaction(
-    ctx: NarrowedContext<Context<Update>, Update.MessageReactionUpdate>
+    ctx: NarrowedContext<Context<Update>, Update.MessageReactionUpdate>,
   ): Promise<void> {
     // Ensure we have the necessary data
     if (!ctx.update.message_reaction || !ctx.from) return;
@@ -483,12 +528,15 @@ export class MessageManager {
     const reactionEmoji = (reaction.new_reaction[0] as ReactionType).type; // Assuming ReactionType has 'type' for emoji
 
     try {
-      const entityId = createUniqueUuid(this.runtime, ctx.from.id.toString()) as UUID;
+      const entityId = createUniqueUuid(
+        this.runtime,
+        ctx.from.id.toString(),
+      ) as UUID;
       const roomId = createUniqueUuid(this.runtime, ctx.chat.id.toString());
 
       const reactionId = createUniqueUuid(
         this.runtime,
-        `${reaction.message_id}-${ctx.from.id}-${Date.now()}`
+        `${reaction.message_id}-${ctx.from.id}-${Date.now()}`,
       );
 
       // Create reaction memory
@@ -499,9 +547,12 @@ export class MessageManager {
         roomId,
         content: {
           channelType: getChannelType(reaction.chat as Chat),
-          text: `Reacted with: ${reactionType === 'emoji' ? reactionEmoji : reactionType}`,
-          source: 'telegram',
-          inReplyTo: createUniqueUuid(this.runtime, reaction.message_id.toString()),
+          text: `Reacted with: ${reactionType === "emoji" ? reactionEmoji : reactionType}`,
+          source: "telegram",
+          inReplyTo: createUniqueUuid(
+            this.runtime,
+            reaction.message_id.toString(),
+          ),
         },
         createdAt: Date.now(),
       };
@@ -510,10 +561,13 @@ export class MessageManager {
       const callback: HandlerCallback = async (content: Content) => {
         try {
           // Add null check for content.text
-          const replyText = content.text ?? '';
+          const replyText = content.text ?? "";
           const sentMessage = await ctx.reply(replyText);
           const responseMemory: Memory = {
-            id: createUniqueUuid(this.runtime, sentMessage.message_id.toString()),
+            id: createUniqueUuid(
+              this.runtime,
+              sentMessage.message_id.toString(),
+            ),
             entityId: this.runtime.agentId,
             agentId: this.runtime.agentId,
             roomId,
@@ -525,7 +579,7 @@ export class MessageManager {
           };
           return [responseMemory];
         } catch (error) {
-          logger.error('Error in reaction callback:', error);
+          logger.error("Error in reaction callback:", error);
           return [];
         }
       };
@@ -535,10 +589,10 @@ export class MessageManager {
         runtime: this.runtime,
         message: memory,
         callback,
-        source: 'telegram',
+        source: "telegram",
         ctx,
         originalMessage: originalMessagePlaceholder as Message, // Cast needed due to placeholder
-        reactionString: reactionType === 'emoji' ? reactionEmoji : reactionType,
+        reactionString: reactionType === "emoji" ? reactionEmoji : reactionType,
         originalReaction: reaction.new_reaction[0] as ReactionType,
       } as TelegramReactionReceivedPayload);
 
@@ -547,15 +601,19 @@ export class MessageManager {
         runtime: this.runtime,
         message: memory,
         callback,
-        source: 'telegram',
+        source: "telegram",
         ctx,
         originalMessage: originalMessagePlaceholder as Message, // Cast needed due to placeholder
-        reactionString: reactionType === 'emoji' ? reactionEmoji : reactionType,
+        reactionString: reactionType === "emoji" ? reactionEmoji : reactionType,
         originalReaction: reaction.new_reaction[0] as ReactionType,
       } as TelegramReactionReceivedPayload);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Error handling reaction:', { error: errorMessage, originalError: error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Error handling reaction:", {
+        error: errorMessage,
+        originalError: error,
+      });
     }
   }
 
@@ -569,7 +627,7 @@ export class MessageManager {
   public async sendMessage(
     chatId: number | string,
     content: Content,
-    replyToMessageId?: number
+    replyToMessageId?: number,
   ): Promise<Message.TextMessage[]> {
     try {
       // Create a context-like object for sending
@@ -581,7 +639,7 @@ export class MessageManager {
       const sentMessages = await this.sendMessageInChunks(
         ctx as Context,
         content,
-        replyToMessageId
+        replyToMessageId,
       );
 
       if (!sentMessages?.length) return [];
@@ -600,16 +658,19 @@ export class MessageManager {
           content: {
             ...content,
             text: sentMessage.text,
-            source: 'telegram',
+            source: "telegram",
             channelType: getChannelType({
-              id: typeof chatId === 'string' ? Number.parseInt(chatId, 10) : chatId,
-              type: 'private', // Default to private, will be overridden if in context
+              id:
+                typeof chatId === "string"
+                  ? Number.parseInt(chatId, 10)
+                  : chatId,
+              type: "private", // Default to private, will be overridden if in context
             } as Chat),
           },
           createdAt: sentMessage.date * 1000,
         };
 
-        await this.runtime.createMemory(memory, 'messages');
+        await this.runtime.createMemory(memory, "messages");
         memories.push(memory);
       }
 
@@ -620,7 +681,7 @@ export class MessageManager {
           content: content,
         },
         roomId,
-        source: 'telegram',
+        source: "telegram",
       });
 
       // Also emit platform-specific event
@@ -631,8 +692,9 @@ export class MessageManager {
 
       return sentMessages;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('Error sending message to Telegram:', {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("Error sending message to Telegram:", {
         error: errorMessage,
         originalError: error,
       });
