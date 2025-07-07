@@ -144,7 +144,6 @@ export class TelegramService extends Service {
     this.bot.start(ctx => {
       this.runtime.emitEvent([TelegramEventTypes.SLASH_START], {
         // we don't need this
-        //runtime: this.runtime,
         ctx,
       });
     });
