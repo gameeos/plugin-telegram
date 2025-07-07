@@ -16,7 +16,6 @@ import {
 import { type Context, Telegraf } from 'telegraf';
 import { type ChatMemberOwner, type ChatMemberAdministrator, type User } from 'telegraf/types';
 import { TELEGRAM_SERVICE_NAME } from './constants';
-import { validateTelegramConfig } from './environment';
 import { MessageManager } from './messageManager';
 import { TelegramEventTypes, type TelegramWorldPayload } from './types';
 
@@ -34,8 +33,8 @@ import { TelegramEventTypes, type TelegramWorldPayload } from './types';
 export class TelegramService extends Service {
   static serviceType = TELEGRAM_SERVICE_NAME;
   capabilityDescription = 'The agent is able to send and receive messages on telegram';
-  private bot: Telegraf<Context>;
-  public messageManager: MessageManager;
+  private bot: Telegraf<Context> | null;
+  public messageManager: MessageManager | null;
   private options;
   private knownChats: Map<string, any> = new Map();
   private syncedEntityIds: Set<string> = new Set<string>();
@@ -47,6 +46,16 @@ export class TelegramService extends Service {
   constructor(runtime: IAgentRuntime) {
     super(runtime);
     logger.log('📱 Constructing new TelegramService...');
+    
+    // Check if Telegram bot token is available and valid
+    const botToken = runtime.getSetting('TELEGRAM_BOT_TOKEN') as string;
+    if (!botToken || botToken.trim() === '') {
+      logger.warn('Telegram Bot Token not provided - Telegram functionality will be unavailable');
+      this.bot = null;
+      this.messageManager = null;
+      return;
+    }
+    
     this.options = {
       telegram: {
         apiRoot:
@@ -55,10 +64,16 @@ export class TelegramService extends Service {
           'https://api.telegram.org',
       },
     };
-    const botToken = runtime.getSetting('TELEGRAM_BOT_TOKEN');
-    this.bot = new Telegraf(botToken, this.options);
-    this.messageManager = new MessageManager(this.bot, this.runtime);
-    logger.log('✅ TelegramService constructor completed');
+    
+    try {
+      this.bot = new Telegraf(botToken, this.options);
+      this.messageManager = new MessageManager(this.bot, this.runtime);
+      logger.log('✅ TelegramService constructor completed');
+    } catch (error) {
+      logger.error(`Error initializing Telegram bot: ${error instanceof Error ? error.message : String(error)}`);
+      this.bot = null;
+      this.messageManager = null;
+    }
   }
 
   /**
@@ -68,7 +83,15 @@ export class TelegramService extends Service {
    * @returns {Promise<TelegramService>} A promise that resolves with the initialized TelegramService.
    */
   static async start(runtime: IAgentRuntime): Promise<TelegramService> {
-    await validateTelegramConfig(runtime);
+    // Remove validateTelegramConfig call to allow service to start without token
+    
+    const service = new TelegramService(runtime);
+    
+    // If bot is not initialized (no token), return the service without further initialization
+    if (!service.bot) {
+      logger.warn('Telegram service started without bot functionality - no bot token provided');
+      return service;
+    }
 
     const maxRetries = 5;
     let retryCount = 0;
@@ -76,8 +99,6 @@ export class TelegramService extends Service {
 
     while (retryCount < maxRetries) {
       try {
-        const service = new TelegramService(runtime);
-
         logger.success(
           `✅ Telegram client successfully started for character ${runtime.character.name}`
         );
@@ -92,7 +113,7 @@ export class TelegramService extends Service {
         service.setupMessageHandlers();
 
         // Wait for bot to be ready by testing getMe()
-        await service.bot.telegram.getMe();
+        await service.bot!.telegram.getMe();
 
         return service;
       } catch (error) {
@@ -110,9 +131,12 @@ export class TelegramService extends Service {
       }
     }
 
-    throw new Error(
-      `Telegram initialization failed after ${maxRetries} attempts. Last error: ${lastError?.message}`
+    logger.error(
+      `Telegram initialization failed after ${maxRetries} attempts. Last error: ${lastError?.message}. Service will continue without Telegram functionality.`
     );
+    
+    // Return the service even if initialization failed, to prevent server crash
+    return service;
   }
 
   /**
@@ -133,7 +157,7 @@ export class TelegramService extends Service {
    * @returns A Promise that resolves once the bot has stopped.
    */
   async stop(): Promise<void> {
-    this.bot.stop();
+    this.bot?.stop();
   }
 
   /**
@@ -141,24 +165,24 @@ export class TelegramService extends Service {
    * @returns {Promise<void>} A Promise that resolves when the initialization is complete.
    */
   private async initializeBot(): Promise<void> {
-    this.bot.start(ctx => {
+    this.bot?.start(ctx => {
       this.runtime.emitEvent([TelegramEventTypes.SLASH_START], {
         // we don't need this
         ctx,
       });
     });
-    this.bot.launch({
+    this.bot?.launch({
       dropPendingUpdates: true,
       allowedUpdates: ['message', 'message_reaction'],
     });
 
     // Get bot info for identification purposes
-    const botInfo = await this.bot.telegram.getMe();
+    const botInfo = await this.bot!.telegram.getMe();
     logger.log(`Bot info: ${JSON.stringify(botInfo)}`);
 
     // Handle sigint and sigterm signals to gracefully stop the bot
-    process.once('SIGINT', () => this.bot.stop('SIGINT'));
-    process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+    process.once('SIGINT', () => this.bot?.stop('SIGINT'));
+    process.once('SIGTERM', () => this.bot?.stop('SIGTERM'));
   }
 
   /**
@@ -178,10 +202,10 @@ export class TelegramService extends Service {
    */
   private setupMiddlewares(): void {
     // Register the authorization middleware
-    this.bot.use(this.authorizationMiddleware.bind(this));
+    this.bot?.use(this.authorizationMiddleware.bind(this));
 
     // Register the chat and entity management middleware
-    this.bot.use(this.chatAndEntityMiddleware.bind(this));
+    this.bot?.use(this.chatAndEntityMiddleware.bind(this));
   }
 
   /**
@@ -267,19 +291,19 @@ export class TelegramService extends Service {
    */
   private setupMessageHandlers(): void {
     // Regular message handler
-    this.bot.on('message', async (ctx) => {
+    this.bot?.on('message', async (ctx) => {
       try {
         // Message handling is now simplified since all preprocessing is done by middleware
-        await this.messageManager.handleMessage(ctx);
+        await this.messageManager!.handleMessage(ctx);
       } catch (error) {
         logger.error('Error handling message:', error);
       }
     });
 
     // Reaction handler
-    this.bot.on('message_reaction', async (ctx) => {
+    this.bot?.on('message_reaction', async (ctx) => {
       try {
-        await this.messageManager.handleReaction(ctx);
+        await this.messageManager!.handleReaction(ctx);
       } catch (error) {
         logger.error('Error handling reaction:', error);
       }
@@ -634,7 +658,7 @@ export class TelegramService extends Service {
       entities,
       source: 'telegram',
       chat,
-      botUsername: this.bot.botInfo!.username,
+      botUsername: this.bot?.botInfo?.username,
     };
 
     // Emit telegram-specific world joined event
@@ -795,7 +819,7 @@ export class TelegramService extends Service {
         // For groups and supergroups, try to get member information
         try {
           // Get chat administrators (this is what's available through the Bot API)
-          const admins = await this.bot.telegram.getChatAdministrators(chat.id);
+          const admins = await this.bot?.telegram.getChatAdministrators(chat.id);
 
           if (admins && admins.length > 0) {
             for (const admin of admins) {
@@ -912,12 +936,14 @@ export class TelegramService extends Service {
   }
 
   static registerSendHandlers(runtime: IAgentRuntime, serviceInstance: TelegramService) {
-    if (serviceInstance) {
+    if (serviceInstance && serviceInstance.bot) {
       runtime.registerSendHandler(
         'telegram',
         serviceInstance.handleSendMessage.bind(serviceInstance)
       );
       logger.info('[Telegram] Registered send handler.');
+    } else {
+      logger.warn('[Telegram] Cannot register send handler - bot not initialized.');
     }
   }
 
@@ -926,6 +952,12 @@ export class TelegramService extends Service {
     target: TargetInfo,
     content: Content
   ): Promise<void> {
+    // Check if bot and messageManager are available
+    if (!this.bot || !this.messageManager) {
+      logger.error('[Telegram SendHandler] Bot not initialized - cannot send messages.');
+      throw new Error('Telegram bot is not initialized. Please provide TELEGRAM_BOT_TOKEN.');
+    }
+    
     let chatId: number | string | undefined;
 
     // Determine the target chat ID

@@ -31,19 +31,6 @@ export enum TelegramEventTypes {
   WORLD_CONNECTED = 'TELEGRAM_WORLD_CONNECTED',
   WORLD_LEFT = 'TELEGRAM_WORLD_LEFT',
 
-export interface TelegramEventPayloadMap {
-  [TelegramEventTypes.MESSAGE_RECEIVED]: TelegramMessageReceivedPayload;
-  [TelegramEventTypes.MESSAGE_SENT]: TelegramMessageSentPayload;
-  [TelegramEventTypes.REACTION_RECEIVED]: TelegramReactionReceivedPayload;
-  [TelegramEventTypes.WORLD_JOINED]: TelegramWorldPayload;
-  [TelegramEventTypes.WORLD_CONNECTED]: TelegramWorldPayload;
-  [TelegramEventTypes.WORLD_LEFT]: TelegramWorldPayload;
-  [TelegramEventTypes.SLASH_START]: { ctx: Context };
-  [TelegramEventTypes.ENTITY_JOINED]: TelegramEntityPayload;
-  [TelegramEventTypes.ENTITY_LEFT]: TelegramEntityPayload;
-  [TelegramEventTypes.ENTITY_UPDATED]: TelegramEntityPayload;
-  [TelegramEventTypes.INTERACTION_RECEIVED]: TelegramReactionReceivedPayload;
-}
   // Entity events
   ENTITY_JOINED = 'TELEGRAM_ENTITY_JOINED',
   ENTITY_LEFT = 'TELEGRAM_ENTITY_LEFT',
@@ -56,6 +43,26 @@ export interface TelegramEventPayloadMap {
   // Interaction events
   REACTION_RECEIVED = 'TELEGRAM_REACTION_RECEIVED',
   INTERACTION_RECEIVED = 'TELEGRAM_INTERACTION_RECEIVED',
+  
+  // Command events
+  SLASH_START = 'TELEGRAM_SLASH_START',
+}
+
+/**
+ * Telegram-specific event payload map
+ */
+export interface TelegramEventPayloadMap {
+  [TelegramEventTypes.MESSAGE_RECEIVED]: TelegramMessageReceivedPayload;
+  [TelegramEventTypes.MESSAGE_SENT]: TelegramMessageSentPayload;
+  [TelegramEventTypes.REACTION_RECEIVED]: TelegramReactionReceivedPayload;
+  [TelegramEventTypes.WORLD_JOINED]: TelegramWorldPayload;
+  [TelegramEventTypes.WORLD_CONNECTED]: TelegramWorldPayload;
+  [TelegramEventTypes.WORLD_LEFT]: TelegramWorldPayload;
+  [TelegramEventTypes.SLASH_START]: { ctx: Context };
+  [TelegramEventTypes.ENTITY_JOINED]: TelegramEntityPayload;
+  [TelegramEventTypes.ENTITY_LEFT]: TelegramEntityPayload;
+  [TelegramEventTypes.ENTITY_UPDATED]: TelegramEntityPayload;
+  [TelegramEventTypes.INTERACTION_RECEIVED]: TelegramReactionReceivedPayload;
 }
 
 /**
@@ -105,20 +112,4 @@ export interface TelegramEntityPayload extends EntityPayload {
     username?: string;
     first_name?: string;
   };
-}
-
-/**
- * Maps Telegram event types to their corresponding payload types
- */
-export interface TelegramEventPayloadMap {
-  [TelegramEventTypes.MESSAGE_RECEIVED]: TelegramMessageReceivedPayload;
-  [TelegramEventTypes.MESSAGE_SENT]: TelegramMessageSentPayload;
-  [TelegramEventTypes.REACTION_RECEIVED]: TelegramReactionReceivedPayload;
-  [TelegramEventTypes.WORLD_JOINED]: TelegramWorldPayload;
-  [TelegramEventTypes.WORLD_CONNECTED]: TelegramWorldPayload;
-  [TelegramEventTypes.WORLD_LEFT]: TelegramWorldPayload;
-  [TelegramEventTypes.ENTITY_JOINED]: TelegramEntityPayload;
-  [TelegramEventTypes.ENTITY_LEFT]: TelegramEntityPayload;
-  [TelegramEventTypes.ENTITY_UPDATED]: TelegramEntityPayload;
-  [TelegramEventTypes.INTERACTION_RECEIVED]: TelegramReactionReceivedPayload;
 }
