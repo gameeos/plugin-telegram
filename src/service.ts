@@ -3,16 +3,13 @@ import {
   type Content,
   type Entity,
   EventType,
-  type HandlerCallback,
   type IAgentRuntime,
-  type Memory,
   Role,
   type Room,
   Service,
   type TargetInfo,
   type UUID,
   type World,
-  WorldPayload,
   createUniqueUuid,
   logger,
 } from '@elizaos/core';
@@ -21,7 +18,7 @@ import { type ChatMemberOwner, type ChatMemberAdministrator, type User } from 't
 import { TELEGRAM_SERVICE_NAME } from './constants';
 import { validateTelegramConfig } from './environment';
 import { MessageManager } from './messageManager';
-import { TelegramEventTypes, TelegramWorldPayload } from './types';
+import { TelegramEventTypes, type TelegramWorldPayload } from './types';
 
 /**
  * Class representing a Telegram service that allows the agent to send and receive messages on Telegram.
@@ -144,6 +141,12 @@ export class TelegramService extends Service {
    * @returns {Promise<void>} A Promise that resolves when the initialization is complete.
    */
   private async initializeBot(): Promise<void> {
+    this.bot.start(ctx => {
+      this.runtime.emitEvent([TelegramEventTypes.SLASH_START], {
+        // we don't need this
+        ctx,
+      });
+    });
     this.bot.launch({
       dropPendingUpdates: true,
       allowedUpdates: ['message', 'message_reaction'],
