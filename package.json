@@ -73,7 +73,7 @@
       "TELEGRAM_TEST_CHAT_ID": {
         "type": "string",
         "description": "Telegram chat ID used by the test suite to send, receive, and validate messages during Telegram bot tests.",
-        "required": true,
+        "required": false,
         "sensitive": false
       }
     }
