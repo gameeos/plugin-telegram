@@ -7,15 +7,18 @@ import {
   type Media,
   type Memory,
   ModelType,
+  ServiceType,
   type UUID,
   createUniqueUuid,
   logger,
+  trimTokens,
+  parseJSONObjectFromText,
 } from "@elizaos/core";
-import type { Chat, Message, ReactionType, Update } from "@telegraf/types";
+import type { Chat, Message, ReactionType, Update, Document } from "@telegraf/types";
 import type { Context, NarrowedContext, Telegraf } from "telegraf";
 import { Markup } from "telegraf";
 import {
-  TelegramContent,
+  type TelegramContent,
   TelegramEventTypes,
   type TelegramMessageReceivedPayload,
   type TelegramMessageSentPayload,
@@ -23,6 +26,54 @@ import {
 } from "./types";
 import { convertToTelegramButtons, convertMarkdownToTelegram } from "./utils";
 import fs from "fs";
+
+/**
+ * Generates a summary for the provided text using a specified model.
+ *
+ * @param {IAgentRuntime} runtime - The runtime environment for the agent.
+ * @param {string} text - The text to generate a summary for.
+ * @returns {Promise<{ title: string; description: string }>} An object containing the generated title and description.
+ */
+async function generateSummary(
+  runtime: IAgentRuntime,
+  text: string
+): Promise<{ title: string; description: string }> {
+  // make sure text is under 128k characters
+  text = await trimTokens(text, 100000, runtime);
+
+  const prompt = `Please generate a concise summary for the following text:
+
+  Text: """
+  ${text}
+  """
+
+  Respond with a JSON object in the following format:
+  \`\`\`json
+  {
+    "title": "Generated Title",
+    "summary": "Generated summary and/or description of the text"
+  }
+  \`\`\``;
+
+  const response = await runtime.useModel(ModelType.TEXT_SMALL, {
+    prompt,
+  });
+
+  const parsedResponse = parseJSONObjectFromText(response);
+
+  if (parsedResponse?.title && parsedResponse?.summary) {
+    return {
+      title: parsedResponse.title,
+      description: parsedResponse.summary,
+    };
+  }
+
+  return {
+    title: "",
+    description: "",
+  };
+}
+
 /**
  * Enum representing different types of media.
  * @enum { string }
@@ -92,7 +143,8 @@ export class MessageManager {
         imageUrl = fileLink.toString();
       } else if (
         "document" in message &&
-        message.document?.mime_type?.startsWith("image/")
+        message.document?.mime_type?.startsWith("image/") &&
+        !message.document?.mime_type?.startsWith("application/pdf")
       ) {
         const fileLink = await this.bot.telegram.getFileLink(
           message.document.file_id,
@@ -112,6 +164,250 @@ export class MessageManager {
     }
 
     return null;
+  }
+
+  /**
+   * Process a document from a Telegram message to extract the document URL and description.
+   * Handles PDFs and other document types by converting them to text when possible.
+   *
+   * @param {Message} message - The Telegram message object containing the document.
+   * @returns {Promise<{ description: string } | null>} The description of the processed document or null if no document found.
+   */
+  /**
+ * Process a document from a Telegram message and extract its content.
+ * Handles PDFs, text files, and other document types centrally.
+ */
+  async processDocument(
+    message: Message,
+  ): Promise<{ description: string } | null> {
+    try {
+      if (!("document" in message) || !message.document) {
+        return null;
+      }
+
+      const document = message.document;
+      const fileLink = await this.bot.telegram.getFileLink(document.file_id);
+      const documentUrl = fileLink.toString();
+
+      logger.info(`Processing document: ${document.file_name} (${document.mime_type}, ${document.file_size} bytes)`);
+
+      // Centralized document processing based on MIME type
+      const documentProcessor = this.getDocumentProcessor(document.mime_type);
+      if (documentProcessor) {
+        return await documentProcessor(document, documentUrl);
+      }
+
+      // Generic fallback for unsupported types
+      return {
+        description: `[Document: ${document.file_name}\nType: ${document.mime_type}\nSize: ${document.file_size} bytes]`
+      };
+
+    } catch (error) {
+      logger.error("Error processing document:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get the appropriate document processor based on MIME type.
+   */
+  private getDocumentProcessor(mimeType?: string): ((document: Document, url: string) => Promise<{ description: string }>) | null {
+    if (!mimeType) return null;
+
+    const processors = {
+      "application/pdf": this.processPdfDocument.bind(this),
+      "text/plain": this.processTextDocument.bind(this),
+      "text/csv": this.processTextDocument.bind(this),
+      "application/json": this.processTextDocument.bind(this),
+    };
+
+    for (const [pattern, processor] of Object.entries(processors)) {
+      if (mimeType.startsWith(pattern)) {
+        return processor;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Process PDF documents by converting them to text.
+   */
+  private async processPdfDocument(document: Document, documentUrl: string): Promise<{ description: string }> {
+    try {
+      const pdfService = this.runtime.getService(ServiceType.PDF) as any;
+      if (!pdfService) {
+        logger.warn("PDF service not available, using fallback");
+        return {
+          description: `[PDF Document: ${document.file_name}\nSize: ${document.file_size} bytes\nUnable to extract text content]`
+        };
+      }
+
+      const response = await fetch(documentUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.status}`);
+      }
+
+      const pdfBuffer = await response.arrayBuffer();
+      const text = await pdfService.convertPdfToText(Buffer.from(pdfBuffer));
+
+      // Use generateSummary for context extraction
+      const { title, description } = await generateSummary(this.runtime, text);
+
+      logger.info(`PDF processed successfully: ${text.length} characters extracted`);
+      return {
+        description: title
+          ? `[PDF Document: ${document.file_name}\nTitle: ${title}\nSummary: ${description}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
+          : `[PDF Document: ${document.file_name}\nContent: ${text.substring(0, 500)}... [Document truncated]`
+      };
+
+    } catch (error) {
+      logger.error("Error processing PDF document:", error);
+      return {
+        description: `[PDF Document: ${document.file_name}\nSize: ${document.file_size} bytes\nError: Unable to extract text content]`
+      };
+    }
+  }
+
+  /**
+ * Process text documents by fetching their content.
+ */
+  private async processTextDocument(document: Document, documentUrl: string): Promise<{ description: string }> {
+    try {
+      const response = await fetch(documentUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch text document: ${response.status}`);
+      }
+
+      const text = await response.text();
+
+      // Use generateSummary for context extraction
+      const { title, description } = await generateSummary(this.runtime, text);
+
+      logger.info(`Text document processed successfully: ${text.length} characters extracted`);
+      return {
+        description: title
+          ? `[Text Document: ${document.file_name}\nTitle: ${title}\nSummary: ${description}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
+          : `[Text Document: ${document.file_name}\nContent: ${text.substring(0, 500)}... [Document truncated]`
+      };
+
+    } catch (error) {
+      logger.error("Error processing text document:", error);
+      return {
+        description: `[Text Document: ${document.file_name}\nSize: ${document.file_size} bytes\nError: Unable to read content]`
+      };
+    }
+  }
+
+  /**
+   * Processes the message content, documents, and images to generate
+   * processed content and media attachments.
+   *
+   * @param {Message} message The message to process
+   * @returns {Promise<{ processedContent: string; attachments: Media[] }>} Processed content and media attachments
+   */
+  async processMessage(
+    message: Message
+  ): Promise<{ processedContent: string; attachments: Media[] }> {
+    let processedContent = "";
+    let attachments: Media[] = [];
+
+    // Get message text
+    if ("text" in message && message.text) {
+      processedContent = message.text;
+    } else if ("caption" in message && message.caption) {
+      processedContent = message.caption as string;
+    }
+
+    logger.info(`Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`);
+
+    // Process documents
+    if ("document" in message && message.document) {
+      const document = message.document;
+      const documentInfo = await this.processDocument(message);
+
+      if (documentInfo) {
+        try {
+          const fileLink = await this.bot.telegram.getFileLink(document.file_id);
+
+          // Extract title and description from documentInfo
+          const titleMatch = documentInfo.description.match(/Title: ([^\n]+)/);
+          const summaryMatch = documentInfo.description.match(/Summary: ([^\n]+)/);
+          const title = titleMatch ? titleMatch[1] : `Document: ${document.file_name}`;
+          const summary = summaryMatch ? summaryMatch[1] : documentInfo.description;
+
+          // Get the full text content using the existing processor
+          let fullText = "";
+          const processor = this.getDocumentProcessor(document.mime_type);
+          if (processor) {
+            const result = await processor(document, fileLink.toString());
+            // Extract full text from the result
+            const fullTextMatch = result.description.match(/Full Content:\n([\s\S]*?)\n--- END DOCUMENT/);
+            if (fullTextMatch) {
+              fullText = fullTextMatch[1];
+            }
+          }
+
+          // Add document content to processedContent so agent can access it
+          if (fullText) {
+            const documentContent = `\n\n--- DOCUMENT CONTENT ---\nTitle: ${title}\nSummary: ${summary}\n\nFull Content:\n${fullText}\n--- END DOCUMENT ---\n\n`;
+            processedContent += documentContent;
+          }
+
+          attachments.push({
+            id: document.file_id,
+            url: fileLink.toString(),
+            title: title,
+            source: document.mime_type?.startsWith("application/pdf") ? "PDF" : "Document",
+            description: summary,
+            text: fullText || summary, // Use full text if available, fallback to summary
+          });
+          logger.info(`Document processed successfully: ${document.file_name}`);
+        } catch (error) {
+          logger.error(`Error processing document ${document.file_name}:`, error);
+          // Add a fallback attachment even if processing failed
+          attachments.push({
+            id: document.file_id,
+            url: "",
+            title: `Document: ${document.file_name}`,
+            source: "Document",
+            description: `Document processing failed: ${document.file_name}`,
+            text: `Document: ${document.file_name}\nSize: ${document.file_size} bytes\nType: ${document.mime_type}`,
+          });
+        }
+      } else {
+        // Add a basic attachment even if documentInfo is null
+        attachments.push({
+          id: document.file_id,
+          url: "",
+          title: `Document: ${document.file_name}`,
+          source: "Document",
+          description: `Document: ${document.file_name}`,
+          text: `Document: ${document.file_name}\nSize: ${document.file_size} bytes\nType: ${document.mime_type}`,
+        });
+      }
+    }
+
+    // Process images
+    if ("photo" in message && message.photo?.length > 0) {
+      const imageInfo = await this.processImage(message);
+      if (imageInfo) {
+        const photo = message.photo[message.photo.length - 1];
+        const fileLink = await this.bot.telegram.getFileLink(photo.file_id);
+        attachments.push({
+          id: photo.file_id,
+          url: fileLink.toString(),
+          title: "Image Attachment",
+          source: "Image",
+          description: imageInfo.description,
+          text: imageInfo.description,
+        });
+      }
+    }
+
+    logger.info(`Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`);
+
+    return { processedContent, attachments };
   }
 
   // Send long messages in chunks
@@ -308,7 +604,7 @@ export class MessageManager {
     // Type guard to ensure message exists
     if (!ctx.message || !ctx.from) return;
 
-    const message = ctx.message as Message.TextMessage;
+    const message = ctx.message;
 
     try {
       // Convert IDs to UUIDs
@@ -339,22 +635,12 @@ export class MessageManager {
         message?.message_id?.toString(),
       );
 
-      // Handle images
-      const imageInfo = await this.processImage(message);
+      // Process message content and attachments like Discord
+      const { processedContent, attachments } = await this.processMessage(message);
 
-      // Get message text - use type guards for safety
-      let messageText = "";
-      if ("text" in message && message.text) {
-        messageText = message.text;
-      } else if ("caption" in message && message.caption) {
-        messageText = message.caption as string;
+      if (!processedContent && attachments.length === 0) {
+        return;
       }
-
-      // Combine text and image description
-      const fullText = imageInfo
-        ? `${messageText} ${imageInfo.description}`
-        : messageText;
-      if (!fullText) return;
 
       // Get chat type and determine channel type
       const chat = message.chat as Chat;
@@ -382,17 +668,16 @@ export class MessageManager {
         agentId: this.runtime.agentId,
         roomId,
         content: {
-          text: fullText,
-          // attachments?
+          text: processedContent || " ",
+          attachments: attachments, // Remove the conditional check to match Discord's approach
           source: "telegram",
-          // url?
           channelType: channelType,
           inReplyTo:
             "reply_to_message" in message && message.reply_to_message
               ? createUniqueUuid(
-                  this.runtime,
-                  message.reply_to_message.message_id.toString(),
-                )
+                this.runtime,
+                message.reply_to_message.message_id.toString(),
+              )
               : undefined,
         },
         metadata: {
