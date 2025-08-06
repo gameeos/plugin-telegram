@@ -28,16 +28,30 @@ import { convertToTelegramButtons, convertMarkdownToTelegram } from "./utils";
 import fs from "fs";
 
 /**
+ * Interface for structured document processing results.
+ */
+interface DocumentProcessingResult {
+  title: string;
+  summary: string;
+  fullText: string;
+  formattedDescription: string;
+  fileName: string;
+  mimeType: string | undefined;
+  fileSize: number | undefined;
+  error?: string;
+}
+
+/**
  * Generates a summary for the provided text using a specified model.
  *
  * @param {IAgentRuntime} runtime - The runtime environment for the agent.
  * @param {string} text - The text to generate a summary for.
- * @returns {Promise<{ title: string; description: string }>} An object containing the generated title and description.
+ * @returns {Promise<{ title: string; summary: string }>} An object containing the generated title and description.
  */
 async function generateSummary(
   runtime: IAgentRuntime,
   text: string
-): Promise<{ title: string; description: string }> {
+): Promise<{ title: string; summary: string }> {
   // make sure text is under 128k characters
   text = await trimTokens(text, 100000, runtime);
 
@@ -64,13 +78,13 @@ async function generateSummary(
   if (parsedResponse?.title && parsedResponse?.summary) {
     return {
       title: parsedResponse.title,
-      description: parsedResponse.summary,
+      summary: parsedResponse.summary,
     };
   }
 
   return {
     title: "",
-    description: "",
+    summary: "",
   };
 }
 
@@ -179,7 +193,7 @@ export class MessageManager {
  */
   async processDocument(
     message: Message,
-  ): Promise<{ description: string } | null> {
+  ): Promise<DocumentProcessingResult | null> {
     try {
       if (!("document" in message) || !message.document) {
         return null;
@@ -199,7 +213,13 @@ export class MessageManager {
 
       // Generic fallback for unsupported types
       return {
-        description: `[Document: ${document.file_name}\nType: ${document.mime_type}\nSize: ${document.file_size} bytes]`
+        title: `Document: ${document.file_name || 'Unknown Document'}`,
+        summary: `Type: ${document.mime_type || 'unknown'}\nSize: ${document.file_size || 0} bytes`,
+        fullText: "",
+        formattedDescription: `[Document: ${document.file_name || 'Unknown Document'}\nType: ${document.mime_type || 'unknown'}\nSize: ${document.file_size || 0} bytes]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
       };
 
     } catch (error) {
@@ -211,7 +231,7 @@ export class MessageManager {
   /**
    * Get the appropriate document processor based on MIME type.
    */
-  private getDocumentProcessor(mimeType?: string): ((document: Document, url: string) => Promise<{ description: string }>) | null {
+  private getDocumentProcessor(mimeType?: string): ((document: Document, url: string) => Promise<DocumentProcessingResult>) | null {
     if (!mimeType) return null;
 
     const processors = {
@@ -233,13 +253,19 @@ export class MessageManager {
   /**
    * Process PDF documents by converting them to text.
    */
-  private async processPdfDocument(document: Document, documentUrl: string): Promise<{ description: string }> {
+  private async processPdfDocument(document: Document, documentUrl: string): Promise<DocumentProcessingResult> {
     try {
       const pdfService = this.runtime.getService(ServiceType.PDF) as any;
       if (!pdfService) {
         logger.warn("PDF service not available, using fallback");
         return {
-          description: `[PDF Document: ${document.file_name}\nSize: ${document.file_size} bytes\nUnable to extract text content]`
+          title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
+          summary: `Size: ${document.file_size || 0} bytes\nUnable to extract text content`,
+          fullText: "",
+          formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nUnable to extract text content]`,
+          fileName: document.file_name || 'Unknown Document',
+          mimeType: document.mime_type,
+          fileSize: document.file_size,
         };
       }
 
@@ -252,19 +278,31 @@ export class MessageManager {
       const text = await pdfService.convertPdfToText(Buffer.from(pdfBuffer));
 
       // Use generateSummary for context extraction
-      const { title, description } = await generateSummary(this.runtime, text);
+      const { title, summary } = await generateSummary(this.runtime, text);
 
       logger.info(`PDF processed successfully: ${text.length} characters extracted`);
       return {
-        description: title
-          ? `[PDF Document: ${document.file_name}\nTitle: ${title}\nSummary: ${description}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
-          : `[PDF Document: ${document.file_name}\nContent: ${text.substring(0, 500)}... [Document truncated]`
+        title: title,
+        summary: summary,
+        fullText: text,
+        formattedDescription: title
+          ? `[PDF Document: ${document.file_name || 'Unknown Document'}\nTitle: ${title}\nSummary: ${summary}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
+          : `[PDF Document: ${document.file_name || 'Unknown Document'}\nContent: ${text.substring(0, 500)}... [Document truncated]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
       };
 
     } catch (error) {
       logger.error("Error processing PDF document:", error);
       return {
-        description: `[PDF Document: ${document.file_name}\nSize: ${document.file_size} bytes\nError: Unable to extract text content]`
+        title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
+        summary: `Size: ${document.file_size || 0} bytes\nError: Unable to extract text content`,
+        fullText: "",
+        formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to extract text content]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
       };
     }
   }
@@ -272,7 +310,7 @@ export class MessageManager {
   /**
  * Process text documents by fetching their content.
  */
-  private async processTextDocument(document: Document, documentUrl: string): Promise<{ description: string }> {
+  private async processTextDocument(document: Document, documentUrl: string): Promise<DocumentProcessingResult> {
     try {
       const response = await fetch(documentUrl);
       if (!response.ok) {
@@ -282,19 +320,31 @@ export class MessageManager {
       const text = await response.text();
 
       // Use generateSummary for context extraction
-      const { title, description } = await generateSummary(this.runtime, text);
+      const { title, summary } = await generateSummary(this.runtime, text);
 
       logger.info(`Text document processed successfully: ${text.length} characters extracted`);
       return {
-        description: title
-          ? `[Text Document: ${document.file_name}\nTitle: ${title}\nSummary: ${description}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
-          : `[Text Document: ${document.file_name}\nContent: ${text.substring(0, 500)}... [Document truncated]`
+        title: title,
+        summary: summary,
+        fullText: text,
+        formattedDescription: title
+          ? `[Text Document: ${document.file_name || 'Unknown Document'}\nTitle: ${title}\nSummary: ${summary}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
+          : `[Text Document: ${document.file_name || 'Unknown Document'}\nContent: ${text.substring(0, 500)}... [Document truncated]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
       };
 
     } catch (error) {
       logger.error("Error processing text document:", error);
       return {
-        description: `[Text Document: ${document.file_name}\nSize: ${document.file_size} bytes\nError: Unable to read content]`
+        title: `Text Document: ${document.file_name || 'Unknown Document'}`,
+        summary: `Size: ${document.file_size || 0} bytes\nError: Unable to read content`,
+        fullText: "",
+        formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to read content]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
       };
     }
   }
@@ -330,23 +380,10 @@ export class MessageManager {
         try {
           const fileLink = await this.bot.telegram.getFileLink(document.file_id);
 
-          // Extract title and description from documentInfo
-          const titleMatch = documentInfo.description.match(/Title: ([^\n]+)/);
-          const summaryMatch = documentInfo.description.match(/Summary: ([^\n]+)/);
-          const title = titleMatch ? titleMatch[1] : `Document: ${document.file_name}`;
-          const summary = summaryMatch ? summaryMatch[1] : documentInfo.description;
-
-          // Get the full text content using the existing processor
-          let fullText = "";
-          const processor = this.getDocumentProcessor(document.mime_type);
-          if (processor) {
-            const result = await processor(document, fileLink.toString());
-            // Extract full text from the result
-            const fullTextMatch = result.description.match(/Full Content:\n([\s\S]*?)\n--- END DOCUMENT/);
-            if (fullTextMatch) {
-              fullText = fullTextMatch[1];
-            }
-          }
+          // Use structured data directly instead of regex parsing
+          const title = documentInfo.title;
+          const summary = documentInfo.summary;
+          const fullText = documentInfo.fullText;
 
           // Add document content to processedContent so agent can access it
           if (fullText) {
@@ -362,17 +399,17 @@ export class MessageManager {
             description: summary,
             text: fullText || summary, // Use full text if available, fallback to summary
           });
-          logger.info(`Document processed successfully: ${document.file_name}`);
+          logger.info(`Document processed successfully: ${documentInfo.fileName}`);
         } catch (error) {
-          logger.error(`Error processing document ${document.file_name}:`, error);
+          logger.error(`Error processing document ${documentInfo.fileName}:`, error);
           // Add a fallback attachment even if processing failed
           attachments.push({
             id: document.file_id,
             url: "",
-            title: `Document: ${document.file_name}`,
+            title: `Document: ${documentInfo.fileName}`,
             source: "Document",
-            description: `Document processing failed: ${document.file_name}`,
-            text: `Document: ${document.file_name}\nSize: ${document.file_size} bytes\nType: ${document.mime_type}`,
+            description: `Document processing failed: ${documentInfo.fileName}`,
+            text: `Document: ${documentInfo.fileName}\nSize: ${documentInfo.fileSize || 0} bytes\nType: ${documentInfo.mimeType || 'unknown'}`,
           });
         }
       } else {
@@ -380,10 +417,10 @@ export class MessageManager {
         attachments.push({
           id: document.file_id,
           url: "",
-          title: `Document: ${document.file_name}`,
+          title: `Document: ${document.file_name || 'Unknown Document'}`,
           source: "Document",
-          description: `Document: ${document.file_name}`,
-          text: `Document: ${document.file_name}\nSize: ${document.file_size} bytes\nType: ${document.mime_type}`,
+          description: `Document: ${document.file_name || 'Unknown Document'}`,
+          text: `Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nType: ${document.mime_type || 'unknown'}`,
         });
       }
     }
@@ -604,7 +641,7 @@ export class MessageManager {
     // Type guard to ensure message exists
     if (!ctx.message || !ctx.from) return;
 
-    const message = ctx.message;
+    const message = ctx.message as Message.TextMessage;
 
     try {
       // Convert IDs to UUIDs
