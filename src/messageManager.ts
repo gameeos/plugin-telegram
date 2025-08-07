@@ -24,7 +24,7 @@ import {
   type TelegramMessageSentPayload,
   type TelegramReactionReceivedPayload,
 } from "./types";
-import { convertToTelegramButtons, convertMarkdownToTelegram } from "./utils";
+import { convertToTelegramButtons, convertMarkdownToTelegram, cleanText } from "./utils";
 import fs from "fs";
 
 /**
@@ -672,10 +672,19 @@ export class MessageManager {
         message?.message_id?.toString(),
       );
 
-      // Process message content and attachments like Discord
+      // Process message content and attachments
       const { processedContent, attachments } = await this.processMessage(message);
 
-      if (!processedContent && attachments.length === 0) {
+      // Clean processedContent and attachments to avoid NULL characters
+      const cleanedContent = cleanText(processedContent);
+      const cleanedAttachments = attachments.map(att => ({
+        ...att,
+        text: cleanText(att.text),
+        description: cleanText(att.description),
+        title: cleanText(att.title),
+      }));
+
+      if (!cleanedContent && cleanedAttachments.length === 0) {
         return;
       }
 
@@ -705,8 +714,8 @@ export class MessageManager {
         agentId: this.runtime.agentId,
         roomId,
         content: {
-          text: processedContent || " ",
-          attachments: attachments, // Remove the conditional check to match Discord's approach
+          text: cleanedContent || " ",
+          attachments: cleanedAttachments,
           source: "telegram",
           channelType: channelType,
           inReplyTo:
