@@ -230,7 +230,7 @@ export class MessageManager {
       return {
         title: document.file_name || 'Unknown Document',
         fullText: text,
-        formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nUnable to extract text content]`,
+        formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nText extracted successfully: ${text.length} characters]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
         fileSize: document.file_size,
@@ -265,7 +265,7 @@ export class MessageManager {
       return {
         title: document.file_name || 'Unknown Document',
         fullText: text,
-        formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to read content]`,
+        formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nText extracted successfully: ${text.length} characters]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
         fileSize: document.file_size,
@@ -303,8 +303,6 @@ export class MessageManager {
     } else if ("caption" in message && message.caption) {
       processedContent = message.caption as string;
     }
-
-    logger.info(`Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`);
 
     // Process documents
     if ("document" in message && message.document) {
