@@ -11,8 +11,6 @@ import {
   type UUID,
   createUniqueUuid,
   logger,
-  trimTokens,
-  parseJSONObjectFromText,
 } from "@elizaos/core";
 import type { Chat, Message, ReactionType, Update, Document } from "@telegraf/types";
 import type { Context, NarrowedContext, Telegraf } from "telegraf";
@@ -32,60 +30,12 @@ import fs from "fs";
  */
 interface DocumentProcessingResult {
   title: string;
-  summary: string;
   fullText: string;
   formattedDescription: string;
   fileName: string;
   mimeType: string | undefined;
   fileSize: number | undefined;
   error?: string;
-}
-
-/**
- * Generates a summary for the provided text using a specified model.
- *
- * @param {IAgentRuntime} runtime - The runtime environment for the agent.
- * @param {string} text - The text to generate a summary for.
- * @returns {Promise<{ title: string; summary: string }>} An object containing the generated title and description.
- */
-async function generateSummary(
-  runtime: IAgentRuntime,
-  text: string
-): Promise<{ title: string; summary: string }> {
-  // make sure text is under 128k characters
-  text = await trimTokens(text, 100000, runtime);
-
-  const prompt = `Please generate a concise summary for the following text:
-
-  Text: """
-  ${text}
-  """
-
-  Respond with a JSON object in the following format:
-  \`\`\`json
-  {
-    "title": "Generated Title",
-    "summary": "Generated summary and/or description of the text"
-  }
-  \`\`\``;
-
-  const response = await runtime.useModel(ModelType.TEXT_SMALL, {
-    prompt,
-  });
-
-  const parsedResponse = parseJSONObjectFromText(response);
-
-  if (parsedResponse?.title && parsedResponse?.summary) {
-    return {
-      title: parsedResponse.title,
-      summary: parsedResponse.summary,
-    };
-  }
-
-  return {
-    title: "",
-    summary: "",
-  };
 }
 
 /**
@@ -214,7 +164,6 @@ export class MessageManager {
       // Generic fallback for unsupported types
       return {
         title: `Document: ${document.file_name || 'Unknown Document'}`,
-        summary: `Type: ${document.mime_type || 'unknown'}\nSize: ${document.file_size || 0} bytes`,
         fullText: "",
         formattedDescription: `[Document: ${document.file_name || 'Unknown Document'}\nType: ${document.mime_type || 'unknown'}\nSize: ${document.file_size || 0} bytes]`,
         fileName: document.file_name || 'Unknown Document',
@@ -260,7 +209,6 @@ export class MessageManager {
         logger.warn("PDF service not available, using fallback");
         return {
           title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
-          summary: `Size: ${document.file_size || 0} bytes\nUnable to extract text content`,
           fullText: "",
           formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nUnable to extract text content]`,
           fileName: document.file_name || 'Unknown Document',
@@ -277,17 +225,12 @@ export class MessageManager {
       const pdfBuffer = await response.arrayBuffer();
       const text = await pdfService.convertPdfToText(Buffer.from(pdfBuffer));
 
-      // Use generateSummary for context extraction
-      const { title, summary } = await generateSummary(this.runtime, text);
 
       logger.info(`PDF processed successfully: ${text.length} characters extracted`);
       return {
-        title: title,
-        summary: summary,
+        title: document.file_name || 'Unknown Document',
         fullText: text,
-        formattedDescription: title
-          ? `[PDF Document: ${document.file_name || 'Unknown Document'}\nTitle: ${title}\nSummary: ${summary}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
-          : `[PDF Document: ${document.file_name || 'Unknown Document'}\nContent: ${text.substring(0, 500)}... [Document truncated]`,
+        formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nUnable to extract text content]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
         fileSize: document.file_size,
@@ -297,7 +240,6 @@ export class MessageManager {
       logger.error("Error processing PDF document:", error);
       return {
         title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
-        summary: `Size: ${document.file_size || 0} bytes\nError: Unable to extract text content`,
         fullText: "",
         formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to extract text content]`,
         fileName: document.file_name || 'Unknown Document',
@@ -319,17 +261,11 @@ export class MessageManager {
 
       const text = await response.text();
 
-      // Use generateSummary for context extraction
-      const { title, summary } = await generateSummary(this.runtime, text);
-
       logger.info(`Text document processed successfully: ${text.length} characters extracted`);
       return {
-        title: title,
-        summary: summary,
+        title: document.file_name || 'Unknown Document',
         fullText: text,
-        formattedDescription: title
-          ? `[Text Document: ${document.file_name || 'Unknown Document'}\nTitle: ${title}\nSummary: ${summary}\n\nFull Content:\n${text}\n--- END DOCUMENT]`
-          : `[Text Document: ${document.file_name || 'Unknown Document'}\nContent: ${text.substring(0, 500)}... [Document truncated]`,
+        formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to read content]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
         fileSize: document.file_size,
@@ -339,7 +275,6 @@ export class MessageManager {
       logger.error("Error processing text document:", error);
       return {
         title: `Text Document: ${document.file_name || 'Unknown Document'}`,
-        summary: `Size: ${document.file_size || 0} bytes\nError: Unable to read content`,
         fullText: "",
         formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to read content]`,
         fileName: document.file_name || 'Unknown Document',
@@ -382,12 +317,11 @@ export class MessageManager {
 
           // Use structured data directly instead of regex parsing
           const title = documentInfo.title;
-          const summary = documentInfo.summary;
           const fullText = documentInfo.fullText;
 
           // Add document content to processedContent so agent can access it
           if (fullText) {
-            const documentContent = `\n\n--- DOCUMENT CONTENT ---\nTitle: ${title}\nSummary: ${summary}\n\nFull Content:\n${fullText}\n--- END DOCUMENT ---\n\n`;
+            const documentContent = `\n\n--- DOCUMENT CONTENT ---\nTitle: ${title}\n\nFull Content:\n${fullText}\n--- END DOCUMENT ---\n\n`;
             processedContent += documentContent;
           }
 
@@ -396,8 +330,8 @@ export class MessageManager {
             url: fileLink.toString(),
             title: title,
             source: document.mime_type?.startsWith("application/pdf") ? "PDF" : "Document",
-            description: summary,
-            text: fullText || summary, // Use full text if available, fallback to summary
+            description: documentInfo.formattedDescription,
+            text: fullText,
           });
           logger.info(`Document processed successfully: ${documentInfo.fileName}`);
         } catch (error) {
