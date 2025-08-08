@@ -46,7 +46,7 @@ export class TelegramService extends Service {
   constructor(runtime: IAgentRuntime) {
     super(runtime);
     logger.log('📱 Constructing new TelegramService...');
-    
+
     // Check if Telegram bot token is available and valid
     const botToken = runtime.getSetting('TELEGRAM_BOT_TOKEN') as string;
     if (!botToken || botToken.trim() === '') {
@@ -55,7 +55,7 @@ export class TelegramService extends Service {
       this.messageManager = null;
       return;
     }
-    
+
     this.options = {
       telegram: {
         apiRoot:
@@ -64,13 +64,15 @@ export class TelegramService extends Service {
           'https://api.telegram.org',
       },
     };
-    
+
     try {
       this.bot = new Telegraf(botToken, this.options);
       this.messageManager = new MessageManager(this.bot, this.runtime);
       logger.log('✅ TelegramService constructor completed');
     } catch (error) {
-      logger.error(`Error initializing Telegram bot: ${error instanceof Error ? error.message : String(error)}`);
+      logger.error(
+        `Error initializing Telegram bot: ${error instanceof Error ? error.message : String(error)}`
+      );
       this.bot = null;
       this.messageManager = null;
     }
@@ -84,9 +86,9 @@ export class TelegramService extends Service {
    */
   static async start(runtime: IAgentRuntime): Promise<TelegramService> {
     // Remove validateTelegramConfig call to allow service to start without token
-    
+
     const service = new TelegramService(runtime);
-    
+
     // If bot is not initialized (no token), return the service without further initialization
     if (!service.bot) {
       logger.warn('Telegram service started without bot functionality - no bot token provided');
@@ -134,7 +136,7 @@ export class TelegramService extends Service {
     logger.error(
       `Telegram initialization failed after ${maxRetries} attempts. Last error: ${lastError?.message}. Service will continue without Telegram functionality.`
     );
-    
+
     // Return the service even if initialization failed, to prevent server crash
     return service;
   }
@@ -165,7 +167,7 @@ export class TelegramService extends Service {
    * @returns {Promise<void>} A Promise that resolves when the initialization is complete.
    */
   private async initializeBot(): Promise<void> {
-    this.bot?.start(ctx => {
+    this.bot?.start((ctx) => {
       this.runtime.emitEvent([TelegramEventTypes.SLASH_START], {
         // we don't need this
         ctx,
@@ -273,7 +275,7 @@ export class TelegramService extends Service {
       try {
         await this.handleForumTopic(ctx);
       } catch (error) {
-        logger.error(`Error handling forum topic: ${error}`);
+        logger.error({ error }, `Error handling forum topic: ${error}`);
       }
     }
 
@@ -296,7 +298,7 @@ export class TelegramService extends Service {
         // Message handling is now simplified since all preprocessing is done by middleware
         await this.messageManager!.handleMessage(ctx);
       } catch (error) {
-        logger.error('Error handling message:', error);
+        logger.error({ error }, 'Error handling message');
       }
     });
 
@@ -305,7 +307,7 @@ export class TelegramService extends Service {
       try {
         await this.messageManager!.handleReaction(ctx);
       } catch (error) {
-        logger.error('Error handling reaction:', error);
+        logger.error({ error }, 'Error handling reaction');
       }
     });
   }
@@ -328,7 +330,7 @@ export class TelegramService extends Service {
       const allowedChatsList = JSON.parse(allowedChats as string);
       return allowedChatsList.includes(chatId);
     } catch (error) {
-      logger.error('Error parsing TELEGRAM_ALLOWED_CHATS:', error);
+      logger.error({ error }, 'Error parsing TELEGRAM_ALLOWED_CHATS');
       return false;
     }
   }
@@ -957,7 +959,7 @@ export class TelegramService extends Service {
       logger.error('[Telegram SendHandler] Bot not initialized - cannot send messages.');
       throw new Error('Telegram bot is not initialized. Please provide TELEGRAM_BOT_TOKEN.');
     }
-    
+
     let chatId: number | string | undefined;
 
     // Determine the target chat ID
@@ -998,11 +1000,11 @@ export class TelegramService extends Service {
       logger.info(`[Telegram SendHandler] Message sent to chat ID: ${chatId}`);
     } catch (error) {
       logger.error(
-        `[Telegram SendHandler] Error sending message: ${error instanceof Error ? error.message : String(error)}`,
         {
           target,
           content,
-        }
+        },
+        `[Telegram SendHandler] Error sending message: ${error instanceof Error ? error.message : String(error)}`
       );
       throw error;
     }

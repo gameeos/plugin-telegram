@@ -6,7 +6,6 @@ import type { MessageManager } from './messageManager';
 import type { TelegramService } from './service';
 import type { TelegramContent } from './types';
 
-
 const TEST_IMAGE_URL =
   'https://github.com/elizaOS/awesome-eliza/blob/main/assets/eliza-logo.jpg?raw=true';
 
@@ -102,7 +101,9 @@ export class TelegramTestSuite implements TestSuite {
   async testCreatingTelegramBot(runtime: IAgentRuntime) {
     this.telegramClient = runtime.getService('telegram') as TelegramService;
     if (!this.telegramClient || !this.telegramClient.messageManager) {
-      throw new Error('Telegram service or message manager not initialized - check TELEGRAM_BOT_TOKEN');
+      throw new Error(
+        'Telegram service or message manager not initialized - check TELEGRAM_BOT_TOKEN'
+      );
     }
     this.bot = this.telegramClient.messageManager.bot;
     this.messageManager = this.telegramClient.messageManager;
@@ -148,7 +149,10 @@ export class TelegramTestSuite implements TestSuite {
         ],
       };
 
-      await this.messageManager.sendMessageInChunks(mockContext as Context, messageContent as TelegramContent);
+      await this.messageManager.sendMessageInChunks(
+        mockContext as Context,
+        messageContent as TelegramContent
+      );
 
       logger.success('Message with image attachment sent successfully.');
     } catch (error) {
@@ -235,7 +239,7 @@ export class TelegramTestSuite implements TestSuite {
       }
       return message.photo[message.photo.length - 1].file_id;
     } catch (error) {
-      logger.error(`Error sending image: ${error}`);
+      logger.error({ error }, `Error sending image: ${error}`);
       throw error;
     }
   }
