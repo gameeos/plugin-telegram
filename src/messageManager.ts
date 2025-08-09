@@ -86,7 +86,6 @@ export class MessageManager {
     this.runtime = runtime;
   }
 
-  // Process image messages and generate descriptions
   /**
    * Process an image from a Telegram message to extract the image URL and description.
    *
@@ -129,10 +128,6 @@ export class MessageManager {
    * @param {Message} message - The Telegram message object containing the document.
    * @returns {Promise<{ description: string } | null>} The description of the processed document or null if no document found.
    */
-  /**
- * Process a document from a Telegram message and extract its content.
- * Handles PDFs, text files, and other document types centrally.
- */
   async processDocument(
     message: Message,
   ): Promise<DocumentProcessingResult | null> {
@@ -177,8 +172,7 @@ export class MessageManager {
 
     const processors = {
       "application/pdf": this.processPdfDocument.bind(this),
-      "text/plain": this.processTextDocument.bind(this),
-      "text/csv": this.processTextDocument.bind(this),
+      "text/": this.processTextDocument.bind(this), // covers text/plain, text/csv, text/markdown, etc.
       "application/json": this.processTextDocument.bind(this),
     };
 
@@ -371,7 +365,6 @@ export class MessageManager {
     return { processedContent, attachments };
   }
 
-  // Send long messages in chunks
   /**
    * Sends a message in chunks, handling attachments and splitting the message if necessary
    *
@@ -515,7 +508,6 @@ export class MessageManager {
     }
   }
 
-  // Split message into smaller parts
   /**
    * Splits a given text into an array of strings based on the maximum message length.
    *
@@ -541,7 +533,6 @@ export class MessageManager {
     return chunks;
   }
 
-  // Main handler for incoming messages
   /**
    * Handle incoming messages from Telegram and process them accordingly.
    * @param {Context} ctx - The context object containing information about the message.

@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
-import { InlineKeyboardButton } from '@telegraf/types';
-import { Button } from './types';
+import type { Button } from './types';
+import type { InlineKeyboardButton } from '@telegraf/types';
 
 // A list of Telegram MarkdownV2 reserved characters that must be escaped
 const TELEGRAM_RESERVED_REGEX = /([_*[\]()~`>#+\-=|{}.!\\])/g;
