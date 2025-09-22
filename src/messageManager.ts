@@ -7,22 +7,37 @@ import {
   type Media,
   type Memory,
   ModelType,
+  ServiceType,
   type UUID,
   createUniqueUuid,
   logger,
 } from '@elizaos/core';
-import type { Chat, Message, ReactionType, Update } from '@telegraf/types';
+import type { Chat, Message, ReactionType, Update, Document } from '@telegraf/types';
 import type { Context, NarrowedContext, Telegraf } from 'telegraf';
 import { Markup } from 'telegraf';
 import {
-  TelegramContent,
+  type TelegramContent,
   TelegramEventTypes,
   type TelegramMessageReceivedPayload,
   type TelegramMessageSentPayload,
   type TelegramReactionReceivedPayload,
 } from './types';
-import { convertToTelegramButtons, convertMarkdownToTelegram } from './utils';
+import { convertToTelegramButtons, convertMarkdownToTelegram, cleanText } from './utils';
 import fs from 'fs';
+
+/**
+ * Interface for structured document processing results.
+ */
+interface DocumentProcessingResult {
+  title: string;
+  fullText: string;
+  formattedDescription: string;
+  fileName: string;
+  mimeType: string | undefined;
+  fileSize: number | undefined;
+  error?: string;
+}
+
 /**
  * Enum representing different types of media.
  * @enum { string }
@@ -71,7 +86,6 @@ export class MessageManager {
     this.runtime = runtime;
   }
 
-  // Process image messages and generate descriptions
   /**
    * Process an image from a Telegram message to extract the image URL and description.
    *
@@ -88,7 +102,7 @@ export class MessageManager {
         const photo = message.photo[message.photo.length - 1];
         const fileLink = await this.bot.telegram.getFileLink(photo.file_id);
         imageUrl = fileLink.toString();
-      } else if ('document' in message && message.document?.mime_type?.startsWith('image/')) {
+      } else if ('document' in message && message.document?.mime_type?.startsWith('image/') && !message.document?.mime_type?.startsWith('application/pdf')) {
         const fileLink = await this.bot.telegram.getFileLink(message.document.file_id);
         imageUrl = fileLink.toString();
       }
@@ -107,7 +121,250 @@ export class MessageManager {
     return null;
   }
 
-  // Send long messages in chunks
+  /**
+   * Process a document from a Telegram message to extract the document URL and description.
+   * Handles PDFs and other document types by converting them to text when possible.
+   *
+   * @param {Message} message - The Telegram message object containing the document.
+   * @returns {Promise<{ description: string } | null>} The description of the processed document or null if no document found.
+   */
+  async processDocument(
+    message: Message,
+  ): Promise<DocumentProcessingResult | null> {
+    try {
+      if (!("document" in message) || !message.document) {
+        return null;
+      }
+
+      const document = message.document;
+      const fileLink = await this.bot.telegram.getFileLink(document.file_id);
+      const documentUrl = fileLink.toString();
+
+      logger.info(`Processing document: ${document.file_name} (${document.mime_type}, ${document.file_size} bytes)`);
+
+      // Centralized document processing based on MIME type
+      const documentProcessor = this.getDocumentProcessor(document.mime_type);
+      if (documentProcessor) {
+        return await documentProcessor(document, documentUrl);
+      }
+
+      // Generic fallback for unsupported types
+      return {
+        title: `Document: ${document.file_name || 'Unknown Document'}`,
+        fullText: "",
+        formattedDescription: `[Document: ${document.file_name || 'Unknown Document'}\nType: ${document.mime_type || 'unknown'}\nSize: ${document.file_size || 0} bytes]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+      };
+
+    } catch (error) {
+      logger.error("Error processing document:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get the appropriate document processor based on MIME type.
+   */
+  private getDocumentProcessor(mimeType?: string): ((document: Document, url: string) => Promise<DocumentProcessingResult>) | null {
+    if (!mimeType) return null;
+
+    const processors = {
+      "application/pdf": this.processPdfDocument.bind(this),
+      "text/": this.processTextDocument.bind(this), // covers text/plain, text/csv, text/markdown, etc.
+      "application/json": this.processTextDocument.bind(this),
+    };
+
+    for (const [pattern, processor] of Object.entries(processors)) {
+      if (mimeType.startsWith(pattern)) {
+        return processor;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Process PDF documents by converting them to text.
+   */
+  private async processPdfDocument(document: Document, documentUrl: string): Promise<DocumentProcessingResult> {
+    try {
+      const pdfService = this.runtime.getService(ServiceType.PDF) as any;
+      if (!pdfService) {
+        logger.warn("PDF service not available, using fallback");
+        return {
+          title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
+          fullText: "",
+          formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nUnable to extract text content]`,
+          fileName: document.file_name || 'Unknown Document',
+          mimeType: document.mime_type,
+          fileSize: document.file_size,
+        };
+      }
+
+      const response = await fetch(documentUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.status}`);
+      }
+
+      const pdfBuffer = await response.arrayBuffer();
+      const text = await pdfService.convertPdfToText(Buffer.from(pdfBuffer));
+
+
+      logger.info(`PDF processed successfully: ${text.length} characters extracted`);
+      return {
+        title: document.file_name || 'Unknown Document',
+        fullText: text,
+        formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nText extracted successfully: ${text.length} characters]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+      };
+
+    } catch (error) {
+      logger.error("Error processing PDF document:", error);
+      return {
+        title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
+        fullText: "",
+        formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to extract text content]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+      };
+    }
+  }
+
+  /**
+ * Process text documents by fetching their content.
+ */
+  private async processTextDocument(document: Document, documentUrl: string): Promise<DocumentProcessingResult> {
+    try {
+      const response = await fetch(documentUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch text document: ${response.status}`);
+      }
+
+      const text = await response.text();
+
+      logger.info(`Text document processed successfully: ${text.length} characters extracted`);
+      return {
+        title: document.file_name || 'Unknown Document',
+        fullText: text,
+        formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nText extracted successfully: ${text.length} characters]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+      };
+
+    } catch (error) {
+      logger.error("Error processing text document:", error);
+      return {
+        title: `Text Document: ${document.file_name || 'Unknown Document'}`,
+        fullText: "",
+        formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to read content]`,
+        fileName: document.file_name || 'Unknown Document',
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+      };
+    }
+  }
+
+  /**
+   * Processes the message content, documents, and images to generate
+   * processed content and media attachments.
+   *
+   * @param {Message} message The message to process
+   * @returns {Promise<{ processedContent: string; attachments: Media[] }>} Processed content and media attachments
+   */
+  async processMessage(
+    message: Message
+  ): Promise<{ processedContent: string; attachments: Media[] }> {
+    let processedContent = "";
+    let attachments: Media[] = [];
+
+    // Get message text
+    if ("text" in message && message.text) {
+      processedContent = message.text;
+    } else if ("caption" in message && message.caption) {
+      processedContent = message.caption as string;
+    }
+
+    // Process documents
+    if ("document" in message && message.document) {
+      const document = message.document;
+      const documentInfo = await this.processDocument(message);
+
+      if (documentInfo) {
+        try {
+          const fileLink = await this.bot.telegram.getFileLink(document.file_id);
+
+          // Use structured data directly instead of regex parsing
+          const title = documentInfo.title;
+          const fullText = documentInfo.fullText;
+
+          // Add document content to processedContent so agent can access it
+          if (fullText) {
+            const documentContent = `\n\n--- DOCUMENT CONTENT ---\nTitle: ${title}\n\nFull Content:\n${fullText}\n--- END DOCUMENT ---\n\n`;
+            processedContent += documentContent;
+          }
+
+          attachments.push({
+            id: document.file_id,
+            url: fileLink.toString(),
+            title: title,
+            source: document.mime_type?.startsWith("application/pdf") ? "PDF" : "Document",
+            description: documentInfo.formattedDescription,
+            text: fullText,
+          });
+          logger.info(`Document processed successfully: ${documentInfo.fileName}`);
+        } catch (error) {
+          logger.error(`Error processing document ${documentInfo.fileName}:`, error);
+          // Add a fallback attachment even if processing failed
+          attachments.push({
+            id: document.file_id,
+            url: "",
+            title: `Document: ${documentInfo.fileName}`,
+            source: "Document",
+            description: `Document processing failed: ${documentInfo.fileName}`,
+            text: `Document: ${documentInfo.fileName}\nSize: ${documentInfo.fileSize || 0} bytes\nType: ${documentInfo.mimeType || 'unknown'}`,
+          });
+        }
+      } else {
+        // Add a basic attachment even if documentInfo is null
+        attachments.push({
+          id: document.file_id,
+          url: "",
+          title: `Document: ${document.file_name || 'Unknown Document'}`,
+          source: "Document",
+          description: `Document: ${document.file_name || 'Unknown Document'}`,
+          text: `Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nType: ${document.mime_type || 'unknown'}`,
+        });
+      }
+    }
+
+    // Process images
+    if ("photo" in message && message.photo?.length > 0) {
+      const imageInfo = await this.processImage(message);
+      if (imageInfo) {
+        const photo = message.photo[message.photo.length - 1];
+        const fileLink = await this.bot.telegram.getFileLink(photo.file_id);
+        attachments.push({
+          id: photo.file_id,
+          url: fileLink.toString(),
+          title: "Image Attachment",
+          source: "Image",
+          description: imageInfo.description,
+          text: imageInfo.description,
+        });
+      }
+    }
+
+    logger.info(`Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`);
+
+    return { processedContent, attachments };
+  }
+
   /**
    * Sends a message in chunks, handling attachments and splitting the message if necessary
    *
@@ -251,7 +508,6 @@ export class MessageManager {
     }
   }
 
-  // Split message into smaller parts
   /**
    * Splits a given text into an array of strings based on the maximum message length.
    *
@@ -277,7 +533,6 @@ export class MessageManager {
     return chunks;
   }
 
-  // Main handler for incoming messages
   /**
    * Handle incoming messages from Telegram and process them accordingly.
    * @param {Context} ctx - The context object containing information about the message.
@@ -310,20 +565,21 @@ export class MessageManager {
       // Get message ID (unique to channel)
       const messageId = createUniqueUuid(this.runtime, message?.message_id?.toString());
 
-      // Handle images
-      const imageInfo = await this.processImage(message);
+      // Process message content and attachments
+      const { processedContent, attachments } = await this.processMessage(message);
 
-      // Get message text - use type guards for safety
-      let messageText = '';
-      if ('text' in message && message.text) {
-        messageText = message.text;
-      } else if ('caption' in message && message.caption) {
-        messageText = message.caption as string;
+      // Clean processedContent and attachments to avoid NULL characters
+      const cleanedContent = cleanText(processedContent);
+      const cleanedAttachments = attachments.map(att => ({
+        ...att,
+        text: cleanText(att.text),
+        description: cleanText(att.description),
+        title: cleanText(att.title),
+      }));
+
+      if (!cleanedContent && cleanedAttachments.length === 0) {
+        return;
       }
-
-      // Combine text and image description
-      const fullText = imageInfo ? `${messageText} ${imageInfo.description}` : messageText;
-      if (!fullText) return;
 
       // Get chat type and determine channel type
       const chat = message.chat as Chat;
@@ -351,10 +607,9 @@ export class MessageManager {
         agentId: this.runtime.agentId,
         roomId,
         content: {
-          text: fullText,
-          // attachments?
+          text: cleanedContent || ' ',
+          attachments: cleanedAttachments,
           source: 'telegram',
-          // url?
           channelType: channelType,
           inReplyTo:
             'reply_to_message' in message && message.reply_to_message

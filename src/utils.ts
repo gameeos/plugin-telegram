@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
-import { InlineKeyboardButton } from '@telegraf/types';
-import { Button } from './types';
+import type { Button } from './types';
+import type { InlineKeyboardButton } from '@telegraf/types';
 
 // A list of Telegram MarkdownV2 reserved characters that must be escaped
 const TELEGRAM_RESERVED_REGEX = /([_*[\]()~`>#+\-=|{}.!\\])/g;
@@ -212,4 +212,14 @@ export function convertToTelegramButtons(buttons?: Button[] | null): InlineKeybo
         return Markup.button.url(button.text, button.url);
     }
   });
+}
+
+/**
+ * Clean text by removing all NULL (\u0000) characters
+ * @param {string | undefined | null} text - The text to clean
+ * @returns {string} The cleaned text
+ */
+export function cleanText(text: string | undefined | null): string {
+  if (!text) return '';
+  return text.replace(/\u0000/g, '');
 }
