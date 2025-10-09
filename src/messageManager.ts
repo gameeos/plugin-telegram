@@ -18,7 +18,6 @@ import { Markup } from 'telegraf';
 import {
   type TelegramContent,
   TelegramEventTypes,
-  type TelegramMessageReceivedPayload,
   type TelegramMessageSentPayload,
   type TelegramReactionReceivedPayload,
 } from './types';
@@ -102,7 +101,11 @@ export class MessageManager {
         const photo = message.photo[message.photo.length - 1];
         const fileLink = await this.bot.telegram.getFileLink(photo.file_id);
         imageUrl = fileLink.toString();
-      } else if ('document' in message && message.document?.mime_type?.startsWith('image/') && !message.document?.mime_type?.startsWith('application/pdf')) {
+      } else if (
+        'document' in message &&
+        message.document?.mime_type?.startsWith('image/') &&
+        !message.document?.mime_type?.startsWith('application/pdf')
+      ) {
         const fileLink = await this.bot.telegram.getFileLink(message.document.file_id);
         imageUrl = fileLink.toString();
       }
@@ -128,11 +131,9 @@ export class MessageManager {
    * @param {Message} message - The Telegram message object containing the document.
    * @returns {Promise<{ description: string } | null>} The description of the processed document or null if no document found.
    */
-  async processDocument(
-    message: Message,
-  ): Promise<DocumentProcessingResult | null> {
+  async processDocument(message: Message): Promise<DocumentProcessingResult | null> {
     try {
-      if (!("document" in message) || !message.document) {
+      if (!('document' in message) || !message.document) {
         return null;
       }
 
@@ -140,7 +141,9 @@ export class MessageManager {
       const fileLink = await this.bot.telegram.getFileLink(document.file_id);
       const documentUrl = fileLink.toString();
 
-      logger.info(`Processing document: ${document.file_name} (${document.mime_type}, ${document.file_size} bytes)`);
+      logger.info(
+        `Processing document: ${document.file_name} (${document.mime_type}, ${document.file_size} bytes)`
+      );
 
       // Centralized document processing based on MIME type
       const documentProcessor = this.getDocumentProcessor(document.mime_type);
@@ -151,15 +154,17 @@ export class MessageManager {
       // Generic fallback for unsupported types
       return {
         title: `Document: ${document.file_name || 'Unknown Document'}`,
-        fullText: "",
+        fullText: '',
         formattedDescription: `[Document: ${document.file_name || 'Unknown Document'}\nType: ${document.mime_type || 'unknown'}\nSize: ${document.file_size || 0} bytes]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
         fileSize: document.file_size,
       };
-
     } catch (error) {
-      logger.error("Error processing document:", error);
+      logger.error(
+        'Error processing document:',
+        error instanceof Error ? error.message : String(error)
+      );
       return null;
     }
   }
@@ -167,13 +172,15 @@ export class MessageManager {
   /**
    * Get the appropriate document processor based on MIME type.
    */
-  private getDocumentProcessor(mimeType?: string): ((document: Document, url: string) => Promise<DocumentProcessingResult>) | null {
+  private getDocumentProcessor(
+    mimeType?: string
+  ): ((document: Document, url: string) => Promise<DocumentProcessingResult>) | null {
     if (!mimeType) return null;
 
     const processors = {
-      "application/pdf": this.processPdfDocument.bind(this),
-      "text/": this.processTextDocument.bind(this), // covers text/plain, text/csv, text/markdown, etc.
-      "application/json": this.processTextDocument.bind(this),
+      'application/pdf': this.processPdfDocument.bind(this),
+      'text/': this.processTextDocument.bind(this), // covers text/plain, text/csv, text/markdown, etc.
+      'application/json': this.processTextDocument.bind(this),
     };
 
     for (const [pattern, processor] of Object.entries(processors)) {
@@ -188,14 +195,17 @@ export class MessageManager {
   /**
    * Process PDF documents by converting them to text.
    */
-  private async processPdfDocument(document: Document, documentUrl: string): Promise<DocumentProcessingResult> {
+  private async processPdfDocument(
+    document: Document,
+    documentUrl: string
+  ): Promise<DocumentProcessingResult> {
     try {
       const pdfService = this.runtime.getService(ServiceType.PDF) as any;
       if (!pdfService) {
-        logger.warn("PDF service not available, using fallback");
+        logger.warn('PDF service not available, using fallback');
         return {
           title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
-          fullText: "",
+          fullText: '',
           formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nUnable to extract text content]`,
           fileName: document.file_name || 'Unknown Document',
           mimeType: document.mime_type,
@@ -211,7 +221,6 @@ export class MessageManager {
       const pdfBuffer = await response.arrayBuffer();
       const text = await pdfService.convertPdfToText(Buffer.from(pdfBuffer));
 
-
       logger.info(`PDF processed successfully: ${text.length} characters extracted`);
       return {
         title: document.file_name || 'Unknown Document',
@@ -221,12 +230,14 @@ export class MessageManager {
         mimeType: document.mime_type,
         fileSize: document.file_size,
       };
-
     } catch (error) {
-      logger.error("Error processing PDF document:", error);
+      logger.error(
+        'Error processing PDF document:',
+        error instanceof Error ? error.message : String(error)
+      );
       return {
         title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
-        fullText: "",
+        fullText: '',
         formattedDescription: `[PDF Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to extract text content]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
@@ -236,9 +247,12 @@ export class MessageManager {
   }
 
   /**
- * Process text documents by fetching their content.
- */
-  private async processTextDocument(document: Document, documentUrl: string): Promise<DocumentProcessingResult> {
+   * Process text documents by fetching their content.
+   */
+  private async processTextDocument(
+    document: Document,
+    documentUrl: string
+  ): Promise<DocumentProcessingResult> {
     try {
       const response = await fetch(documentUrl);
       if (!response.ok) {
@@ -256,12 +270,14 @@ export class MessageManager {
         mimeType: document.mime_type,
         fileSize: document.file_size,
       };
-
     } catch (error) {
-      logger.error("Error processing text document:", error);
+      logger.error(
+        'Error processing text document:',
+        error instanceof Error ? error.message : String(error)
+      );
       return {
         title: `Text Document: ${document.file_name || 'Unknown Document'}`,
-        fullText: "",
+        fullText: '',
         formattedDescription: `[Text Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nError: Unable to read content]`,
         fileName: document.file_name || 'Unknown Document',
         mimeType: document.mime_type,
@@ -280,18 +296,18 @@ export class MessageManager {
   async processMessage(
     message: Message
   ): Promise<{ processedContent: string; attachments: Media[] }> {
-    let processedContent = "";
+    let processedContent = '';
     let attachments: Media[] = [];
 
     // Get message text
-    if ("text" in message && message.text) {
+    if ('text' in message && message.text) {
       processedContent = message.text;
-    } else if ("caption" in message && message.caption) {
+    } else if ('caption' in message && message.caption) {
       processedContent = message.caption as string;
     }
 
     // Process documents
-    if ("document" in message && message.document) {
+    if ('document' in message && message.document) {
       const document = message.document;
       const documentInfo = await this.processDocument(message);
 
@@ -313,19 +329,22 @@ export class MessageManager {
             id: document.file_id,
             url: fileLink.toString(),
             title: title,
-            source: document.mime_type?.startsWith("application/pdf") ? "PDF" : "Document",
+            source: document.mime_type?.startsWith('application/pdf') ? 'PDF' : 'Document',
             description: documentInfo.formattedDescription,
             text: fullText,
           });
           logger.info(`Document processed successfully: ${documentInfo.fileName}`);
         } catch (error) {
-          logger.error(`Error processing document ${documentInfo.fileName}:`, error);
+          logger.error(
+            `Error processing document ${documentInfo.fileName}:`,
+            error instanceof Error ? error.message : String(error)
+          );
           // Add a fallback attachment even if processing failed
           attachments.push({
             id: document.file_id,
-            url: "",
+            url: '',
             title: `Document: ${documentInfo.fileName}`,
-            source: "Document",
+            source: 'Document',
             description: `Document processing failed: ${documentInfo.fileName}`,
             text: `Document: ${documentInfo.fileName}\nSize: ${documentInfo.fileSize || 0} bytes\nType: ${documentInfo.mimeType || 'unknown'}`,
           });
@@ -334,9 +353,9 @@ export class MessageManager {
         // Add a basic attachment even if documentInfo is null
         attachments.push({
           id: document.file_id,
-          url: "",
+          url: '',
           title: `Document: ${document.file_name || 'Unknown Document'}`,
-          source: "Document",
+          source: 'Document',
           description: `Document: ${document.file_name || 'Unknown Document'}`,
           text: `Document: ${document.file_name || 'Unknown Document'}\nSize: ${document.file_size || 0} bytes\nType: ${document.mime_type || 'unknown'}`,
         });
@@ -344,7 +363,7 @@ export class MessageManager {
     }
 
     // Process images
-    if ("photo" in message && message.photo?.length > 0) {
+    if ('photo' in message && message.photo?.length > 0) {
       const imageInfo = await this.processImage(message);
       if (imageInfo) {
         const photo = message.photo[message.photo.length - 1];
@@ -352,15 +371,17 @@ export class MessageManager {
         attachments.push({
           id: photo.file_id,
           url: fileLink.toString(),
-          title: "Image Attachment",
-          source: "Image",
+          title: 'Image Attachment',
+          source: 'Image',
           description: imageInfo.description,
           text: imageInfo.description,
         });
       }
     }
 
-    logger.info(`Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`);
+    logger.info(
+      `Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`
+    );
 
     return { processedContent, attachments };
   }
@@ -570,7 +591,7 @@ export class MessageManager {
 
       // Clean processedContent and attachments to avoid NULL characters
       const cleanedContent = cleanText(processedContent);
-      const cleanedAttachments = attachments.map(att => ({
+      const cleanedAttachments = attachments.map((att) => ({
         ...att,
         text: cleanText(att.text),
         description: cleanText(att.description),
@@ -683,23 +704,9 @@ export class MessageManager {
         }
       };
 
-      // Let the bootstrap plugin handle the message
-      this.runtime.emitEvent(EventType.MESSAGE_RECEIVED, {
-        runtime: this.runtime,
-        message: memory,
-        callback,
-        source: 'telegram',
-      });
-
-      // Also emit the platform-specific event
-      this.runtime.emitEvent(TelegramEventTypes.MESSAGE_RECEIVED, {
-        runtime: this.runtime,
-        message: memory,
-        callback,
-        source: 'telegram',
-        ctx,
-        originalMessage: message,
-      } as TelegramMessageReceivedPayload);
+      // Call the message handler directly instead of emitting events
+      // This provides a clearer, more traceable flow for message processing
+      await this.runtime.messageService!.handleMessage(this.runtime, memory, callback);
     } catch (error) {
       logger.error(
         {
