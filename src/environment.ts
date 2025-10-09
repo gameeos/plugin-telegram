@@ -29,8 +29,8 @@ export async function validateTelegramConfig(
     return telegramEnvSchema.parse(config);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessages = (error as any).errors
-        .map((err: any) => `${err.path.join('.')}: ${err.message}`)
+      const errorMessages = error.issues
+        .map((err) => `${err.path.join('.')}: ${err.message}`)
         .join('\n');
       console.warn(`Telegram configuration validation failed:\n${errorMessages}`);
     }
