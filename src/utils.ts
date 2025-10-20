@@ -1,6 +1,7 @@
 import { Markup } from 'telegraf';
 import type { Button } from './types';
 import type { InlineKeyboardButton } from '@telegraf/types';
+import { logger } from '@elizaos/core';
 
 // A list of Telegram MarkdownV2 reserved characters that must be escaped
 const TELEGRAM_RESERVED_REGEX = /([_*[\]()~`>#+\-=|{}.!\\])/g;
@@ -204,14 +205,33 @@ export function splitMessage(text: string, maxLength = 4096): string[] {
  */
 export function convertToTelegramButtons(buttons?: Button[] | null): InlineKeyboardButton[] {
   if (!buttons) return [];
-  return buttons.map((button: Button) => {
+  const telegramButtons: InlineKeyboardButton[] = [];
+
+  for (const button of buttons) {
+    // Validate button has required properties
+    if (!button || !button.text || !button.url) {
+      logger.warn({ button }, 'Invalid button configuration, skipping');
+      continue;
+    }
+
+    let telegramButton: InlineKeyboardButton;
     switch (button.kind) {
       case 'login':
-        return Markup.button.login(button.text, button.url);
+        telegramButton = Markup.button.login(button.text, button.url);
+        break;
       case 'url':
-        return Markup.button.url(button.text, button.url);
+        telegramButton = Markup.button.url(button.text, button.url);
+        break;
+      default:
+        logger.warn(`Unknown button kind '${button.kind}', treating as URL button`);
+        telegramButton = Markup.button.url(button.text, button.url);
+        break;
     }
-  });
+
+    telegramButtons.push(telegramButton);
+  }
+
+  return telegramButtons;
 }
 
 /**
@@ -221,5 +241,6 @@ export function convertToTelegramButtons(buttons?: Button[] | null): InlineKeybo
  */
 export function cleanText(text: string | undefined | null): string {
   if (!text) return '';
-  return text.replace(/\u0000/g, '');
+  // Avoid control char in regex literal; lint-friendly
+  return text.split('\u0000').join('');
 }

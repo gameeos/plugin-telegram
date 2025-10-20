@@ -161,10 +161,7 @@ export class MessageManager {
         fileSize: document.file_size,
       };
     } catch (error) {
-      logger.error(
-        'Error processing document:',
-        error instanceof Error ? error.message : String(error)
-      );
+      logger.error({ error }, 'Error processing document');
       return null;
     }
   }
@@ -231,10 +228,7 @@ export class MessageManager {
         fileSize: document.file_size,
       };
     } catch (error) {
-      logger.error(
-        'Error processing PDF document:',
-        error instanceof Error ? error.message : String(error)
-      );
+      logger.error({ error }, 'Error processing PDF document');
       return {
         title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
         fullText: '',
@@ -271,10 +265,7 @@ export class MessageManager {
         fileSize: document.file_size,
       };
     } catch (error) {
-      logger.error(
-        'Error processing text document:',
-        error instanceof Error ? error.message : String(error)
-      );
+      logger.error({ error }, 'Error processing text document');
       return {
         title: `Text Document: ${document.file_name || 'Unknown Document'}`,
         fullText: '',
@@ -335,10 +326,7 @@ export class MessageManager {
           });
           logger.info(`Document processed successfully: ${documentInfo.fileName}`);
         } catch (error) {
-          logger.error(
-            `Error processing document ${documentInfo.fileName}:`,
-            error instanceof Error ? error.message : String(error)
-          );
+          logger.error({ error }, `Error processing document ${documentInfo.fileName}`);
           // Add a fallback attachment even if processing failed
           attachments.push({
             id: document.file_id,
