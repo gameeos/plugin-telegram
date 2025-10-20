@@ -18,7 +18,6 @@ import { Markup } from 'telegraf';
 import {
   type TelegramContent,
   TelegramEventTypes,
-  type TelegramMessageReceivedPayload,
   type TelegramMessageSentPayload,
   type TelegramReactionReceivedPayload,
 } from './types';
@@ -693,23 +692,15 @@ export class MessageManager {
         }
       };
 
-      // Let the bootstrap plugin handle the message
-      this.runtime.emitEvent(EventType.MESSAGE_RECEIVED, {
-        runtime: this.runtime,
-        message: memory,
-        callback,
-        source: 'telegram',
-      });
-
-      // Also emit the platform-specific event
-      this.runtime.emitEvent(TelegramEventTypes.MESSAGE_RECEIVED, {
-        runtime: this.runtime,
-        message: memory,
-        callback,
-        source: 'telegram',
-        ctx,
-        originalMessage: message,
-      } as TelegramMessageReceivedPayload);
+      // Call the message handler directly instead of emitting events
+      // This provides a clearer, more traceable flow for message processing
+      if (!this.runtime.messageService) {
+        logger.error('Message service is not available');
+        throw new Error(
+          'Message service is not initialized. Ensure the message service is properly configured.'
+        );
+      }
+      await this.runtime.messageService.handleMessage(this.runtime, memory, callback);
     } catch (error) {
       logger.error(
         {
