@@ -17,7 +17,9 @@ export type TelegramConfig = z.infer<typeof telegramEnvSchema>;
  * @param {IAgentRuntime} runtime - The agent runtime used to get the setting.
  * @returns {Promise<TelegramConfig | null>} A promise that resolves with the validated Telegram configuration or null if invalid.
  */
-export async function validateTelegramConfig(runtime: IAgentRuntime): Promise<TelegramConfig | null> {
+export async function validateTelegramConfig(
+  runtime: IAgentRuntime
+): Promise<TelegramConfig | null> {
   try {
     const config = {
       TELEGRAM_BOT_TOKEN:
@@ -27,7 +29,7 @@ export async function validateTelegramConfig(runtime: IAgentRuntime): Promise<Te
     return telegramEnvSchema.parse(config);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessages = error.errors
+      const errorMessages = error.issues
         .map((err) => `${err.path.join('.')}: ${err.message}`)
         .join('\n');
       console.warn(`Telegram configuration validation failed:\n${errorMessages}`);
