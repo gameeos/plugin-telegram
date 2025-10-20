@@ -237,9 +237,8 @@ export function convertToTelegramButtons(buttons?: Button[] | null): InlineKeybo
 /**
  * Clean text by removing all NULL (\u0000) characters
  * @param {string | undefined | null} text - The text to clean
- * @returns {string} The cleaned text
- */
 export function cleanText(text: string | undefined | null): string {
   if (!text) return '';
-  return text.replace(/\u0000/g, '');
+  // Avoid control char in regex literal; lint-friendly
+  return text.split('\u0000').join('');
 }
