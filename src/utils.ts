@@ -223,7 +223,7 @@ export function convertToTelegramButtons(buttons?: Button[] | null): InlineKeybo
         telegramButton = Markup.button.url(button.text, button.url);
         break;
       default:
-        logger.warn(`Unknown button kind '${button.kind}', treating as URL button`);
+        logger.warn({ src: 'plugin:telegram', buttonKind: button.kind }, 'Unknown button kind, treating as URL button');
         telegramButton = Markup.button.url(button.text, button.url);
         break;
     }

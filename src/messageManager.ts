@@ -95,7 +95,7 @@ export class MessageManager {
     try {
       let imageUrl: string | null = null;
 
-      logger.info(`Telegram Message: ${JSON.stringify(message, null, 2)}`);
+      logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, messageId: message.message_id }, 'Processing image from message');
 
       if ('photo' in message && message.photo?.length > 0) {
         const photo = message.photo[message.photo.length - 1];
@@ -118,7 +118,7 @@ export class MessageManager {
         return { description: `[Image: ${title}\n${description}]` };
       }
     } catch (error) {
-      console.error('❌ Error processing image:', error);
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, error: error instanceof Error ? error.message : String(error) }, 'Error processing image');
     }
 
     return null;
@@ -141,9 +141,7 @@ export class MessageManager {
       const fileLink = await this.bot.telegram.getFileLink(document.file_id);
       const documentUrl = fileLink.toString();
 
-      logger.info(
-        `Processing document: ${document.file_name} (${document.mime_type}, ${document.file_size} bytes)`
-      );
+      logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: document.file_name, mimeType: document.mime_type, fileSize: document.file_size }, 'Processing document');
 
       // Centralized document processing based on MIME type
       const documentProcessor = this.getDocumentProcessor(document.mime_type);
@@ -161,7 +159,7 @@ export class MessageManager {
         fileSize: document.file_size,
       };
     } catch (error) {
-      logger.error({ error }, 'Error processing document');
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, error: error instanceof Error ? error.message : String(error) }, 'Error processing document');
       return null;
     }
   }
@@ -199,7 +197,7 @@ export class MessageManager {
     try {
       const pdfService = this.runtime.getService(ServiceType.PDF) as any;
       if (!pdfService) {
-        logger.warn('PDF service not available, using fallback');
+        logger.warn({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'PDF service not available, using fallback');
         return {
           title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
           fullText: '',
@@ -218,7 +216,7 @@ export class MessageManager {
       const pdfBuffer = await response.arrayBuffer();
       const text = await pdfService.convertPdfToText(Buffer.from(pdfBuffer));
 
-      logger.info(`PDF processed successfully: ${text.length} characters extracted`);
+      logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: document.file_name, charactersExtracted: text.length }, 'PDF processed successfully');
       return {
         title: document.file_name || 'Unknown Document',
         fullText: text,
@@ -228,7 +226,7 @@ export class MessageManager {
         fileSize: document.file_size,
       };
     } catch (error) {
-      logger.error({ error }, 'Error processing PDF document');
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: document.file_name, error: error instanceof Error ? error.message : String(error) }, 'Error processing PDF document');
       return {
         title: `PDF Document: ${document.file_name || 'Unknown Document'}`,
         fullText: '',
@@ -255,7 +253,7 @@ export class MessageManager {
 
       const text = await response.text();
 
-      logger.info(`Text document processed successfully: ${text.length} characters extracted`);
+      logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: document.file_name, charactersExtracted: text.length }, 'Text document processed successfully');
       return {
         title: document.file_name || 'Unknown Document',
         fullText: text,
@@ -265,7 +263,7 @@ export class MessageManager {
         fileSize: document.file_size,
       };
     } catch (error) {
-      logger.error({ error }, 'Error processing text document');
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: document.file_name, error: error instanceof Error ? error.message : String(error) }, 'Error processing text document');
       return {
         title: `Text Document: ${document.file_name || 'Unknown Document'}`,
         fullText: '',
@@ -324,9 +322,9 @@ export class MessageManager {
             description: documentInfo.formattedDescription,
             text: fullText,
           });
-          logger.info(`Document processed successfully: ${documentInfo.fileName}`);
+          logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: documentInfo.fileName }, 'Document processed successfully');
         } catch (error) {
-          logger.error({ error }, `Error processing document ${documentInfo.fileName}`);
+          logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, fileName: documentInfo.fileName, error: error instanceof Error ? error.message : String(error) }, 'Error processing document');
           // Add a fallback attachment even if processing failed
           attachments.push({
             id: document.file_id,
@@ -367,9 +365,7 @@ export class MessageManager {
       }
     }
 
-    logger.info(
-      `Message processed - Content: ${processedContent ? 'yes' : 'no'}, Attachments: ${attachments.length}`
-    );
+    logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, hasContent: !!processedContent, attachmentsCount: attachments.length }, 'Message processed');
 
     return { processedContent, attachments };
   }
@@ -422,7 +418,7 @@ export class MessageManager {
       const telegramButtons = convertToTelegramButtons(content.buttons ?? []);
 
       if (!ctx.chat) {
-        logger.error('sendMessageInChunks: ctx.chat is undefined');
+        logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'sendMessageInChunks: ctx.chat is undefined');
         return [];
       }
       await ctx.telegram.sendChatAction(ctx.chat.id, 'typing');
@@ -430,7 +426,7 @@ export class MessageManager {
       for (let i = 0; i < chunks.length; i++) {
         const chunk = convertMarkdownToTelegram(chunks[i]);
         if (!ctx.chat) {
-          logger.error('sendMessageInChunks loop: ctx.chat is undefined');
+          logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'sendMessageInChunks loop: ctx.chat is undefined');
           continue;
         }
         const sentMessage = (await ctx.telegram.sendMessage(ctx.chat.id, chunk, {
@@ -504,15 +500,9 @@ export class MessageManager {
         }
       }
 
-      logger.info(
-        `${type.charAt(0).toUpperCase() + type.slice(1)} sent successfully: ${mediaPath}`
-      );
+      logger.debug({ src: 'plugin:telegram', agentId: this.runtime.agentId, mediaType: type, mediaPath }, 'Media sent successfully');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(
-        { originalError: error },
-        `Failed to send ${type}. Path: ${mediaPath}. Error: ${errorMessage}`
-      );
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, mediaType: type, mediaPath, error: error instanceof Error ? error.message : String(error) }, 'Failed to send media');
       throw error;
     }
   }
@@ -564,7 +554,7 @@ export class MessageManager {
 
       // Add null check for ctx.chat
       if (!ctx.chat) {
-        logger.error('handleMessage: ctx.chat is undefined');
+        logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'handleMessage: ctx.chat is undefined');
         return;
       }
       // Generate room ID based on whether this is in a forum topic
@@ -687,7 +677,7 @@ export class MessageManager {
 
           return memories;
         } catch (error) {
-          logger.error({ error }, 'Error in message callback');
+          logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, error: error instanceof Error ? error.message : String(error) }, 'Error in message callback');
           return [];
         }
       };
@@ -695,22 +685,14 @@ export class MessageManager {
       // Call the message handler directly instead of emitting events
       // This provides a clearer, more traceable flow for message processing
       if (!this.runtime.messageService) {
-        logger.error('Message service is not available');
+        logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'Message service is not available');
         throw new Error(
           'Message service is not initialized. Ensure the message service is properly configured.'
         );
       }
       await this.runtime.messageService.handleMessage(this.runtime, memory, callback);
     } catch (error) {
-      logger.error(
-        {
-          error,
-          chatId: ctx.chat?.id,
-          messageId: ctx.message?.message_id,
-          from: ctx.from?.username || ctx.from?.id,
-        },
-        'Error handling Telegram message'
-      );
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, chatId: ctx.chat?.id, messageId: ctx.message?.message_id, from: ctx.from?.username || ctx.from?.id, error: error instanceof Error ? error.message : String(error) }, 'Error handling Telegram message');
       throw error;
     }
   }
@@ -782,7 +764,7 @@ export class MessageManager {
           };
           return [responseMemory];
         } catch (error) {
-          logger.error({ error }, 'Error in reaction callback');
+          logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, error: error instanceof Error ? error.message : String(error) }, 'Error in reaction callback');
           return [];
         }
       };
@@ -811,14 +793,7 @@ export class MessageManager {
         originalReaction: reaction.new_reaction[0] as ReactionType,
       } as TelegramReactionReceivedPayload);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(
-        {
-          error: errorMessage,
-          originalError: error,
-        },
-        'Error handling reaction'
-      );
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, error: error instanceof Error ? error.message : String(error) }, 'Error handling reaction');
     }
   }
 
@@ -894,14 +869,7 @@ export class MessageManager {
 
       return sentMessages;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(
-        {
-          error: errorMessage,
-          originalError: error,
-        },
-        'Error sending message to Telegram'
-      );
+      logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, chatId, error: error instanceof Error ? error.message : String(error) }, 'Error sending message to Telegram');
       return [];
     }
   }

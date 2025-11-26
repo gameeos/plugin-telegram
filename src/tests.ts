@@ -91,7 +91,7 @@ export class TelegramTestSuite implements TestSuite {
         throw new Error('Bot is not initialized.');
       }
       const chat = await this.bot.telegram.getChat(chatId);
-      logger.log(`Fetched real chat: ${JSON.stringify(chat)}`);
+      logger.debug({ src: 'plugin:telegram', chatId }, 'Fetched real chat');
       return chat;
     } catch (error) {
       throw new Error(`Error fetching real Telegram chat: ${error}`);
@@ -107,7 +107,7 @@ export class TelegramTestSuite implements TestSuite {
     }
     this.bot = this.telegramClient.messageManager.bot;
     this.messageManager = this.telegramClient.messageManager;
-    logger.debug('Telegram bot initialized successfully.');
+    logger.debug({ src: 'plugin:telegram' }, 'Telegram bot initialized successfully');
   }
 
   async testSendingTextMessage(runtime: IAgentRuntime) {
@@ -116,7 +116,7 @@ export class TelegramTestSuite implements TestSuite {
 
       const chatId = this.validateChatId(runtime);
       await this.bot.telegram.sendMessage(chatId, 'Testing Telegram message!');
-      logger.debug('Message sent successfully.');
+      logger.debug({ src: 'plugin:telegram', chatId }, 'Message sent successfully');
     } catch (error) {
       throw new Error(`Error sending Telegram message: ${error}`);
     }
@@ -154,7 +154,7 @@ export class TelegramTestSuite implements TestSuite {
         messageContent as TelegramContent
       );
 
-      logger.success('Message with image attachment sent successfully.');
+      logger.success({ src: 'plugin:telegram' }, 'Message with image attachment sent successfully');
     } catch (error) {
       throw new Error(`Error sending Telegram message with attachment: ${error}`);
     }
@@ -222,7 +222,7 @@ export class TelegramTestSuite implements TestSuite {
         throw new Error('Error processing Telegram image or description not found');
       }
       const { description } = result;
-      logger.log(`Processing Telegram image successfully: ${description}`);
+      logger.debug({ src: 'plugin:telegram', description }, 'Processing Telegram image successfully');
     } catch (error) {
       throw new Error(`Error processing Telegram image: ${error}`);
     }
@@ -239,7 +239,7 @@ export class TelegramTestSuite implements TestSuite {
       }
       return message.photo[message.photo.length - 1].file_id;
     } catch (error) {
-      logger.error({ error }, `Error sending image: ${error}`);
+      logger.error({ src: 'plugin:telegram', chatId, error: error instanceof Error ? error.message : String(error) }, 'Error sending image');
       throw error;
     }
   }
