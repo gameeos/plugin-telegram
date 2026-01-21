@@ -1,6 +1,6 @@
 {
   "name": "@elizaos/plugin-telegram",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -27,6 +27,11 @@
     "typescript": "^5.8.3"
   },
   "devDependencies": {
+    "@elizaos/config": "^1.6.4",
+    "@eslint/js": "^9.17.0",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "eslint": "^9.17.0",
     "prettier": "3.5.3",
     "tsup": "8.4.0",
     "vitest": "1.6.1"
@@ -36,7 +41,8 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "prettier --write ./src",
+    "lint": "eslint ./src --fix && prettier --write ./src",
+    "lint:check": "eslint ./src",
     "clean": "rm -rf dist .turbo node_modules .turbo-tsconfig.json tsconfig.tsbuildinfo",
     "format": "prettier --write ./src",
     "format:check": "prettier --check ./src"

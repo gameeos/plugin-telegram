@@ -1,4 +1,4 @@
-import type { IAgentRuntime } from '@elizaos/core';
+import { type IAgentRuntime, logger } from '@elizaos/core';
 import { z } from 'zod';
 
 export const telegramEnvSchema = z.object({
@@ -32,7 +32,7 @@ export async function validateTelegramConfig(
       const errorMessages = error.issues
         .map((err) => `${err.path.join('.')}: ${err.message}`)
         .join('\n');
-      console.warn(`Telegram configuration validation failed:\n${errorMessages}`);
+      logger.warn({ src: 'plugin:telegram', errors: errorMessages }, 'Telegram configuration validation failed');
     }
     return null;
   }
