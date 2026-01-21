@@ -682,15 +682,22 @@ export class MessageManager {
         }
       };
 
-      // Call the message handler directly instead of emitting events
-      // This provides a clearer, more traceable flow for message processing
-      if (!this.runtime.messageService) {
+      // Use elizaOS.handleMessage if available (unified messaging API with streaming support)
+      // Falls back to direct messageService call for backward compatibility
+      if (this.runtime.hasElizaOS()) {
+        await this.runtime.elizaOS.handleMessage(this.runtime.agentId, memory, {
+          onResponse: async (content) => {
+            await callback(content);
+          },
+        });
+      } else if (this.runtime.messageService) {
+        await this.runtime.messageService.handleMessage(this.runtime, memory, callback);
+      } else {
         logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'Message service is not available');
         throw new Error(
           'Message service is not initialized. Ensure the message service is properly configured.'
         );
       }
-      await this.runtime.messageService.handleMessage(this.runtime, memory, callback);
     } catch (error) {
       logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId, chatId: ctx.chat?.id, messageId: ctx.message?.message_id, from: ctx.from?.username || ctx.from?.id, error: error instanceof Error ? error.message : String(error) }, 'Error handling Telegram message');
       throw error;
