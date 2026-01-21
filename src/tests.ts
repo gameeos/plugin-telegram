@@ -73,10 +73,10 @@ export class TelegramTestSuite implements TestSuite {
    * @throws {Error} If TELEGRAM_TEST_CHAT_ID is not set in the runtime settings or environment variables.
    * @returns {string} The validated chat ID.
    */
-  validateChatId(runtime: IAgentRuntime) {
+  validateChatId(runtime: IAgentRuntime): string | number {
     const testChatId =
       runtime.getSetting('TELEGRAM_TEST_CHAT_ID') || process.env.TELEGRAM_TEST_CHAT_ID;
-    if (!testChatId) {
+    if (!testChatId || typeof testChatId === 'boolean') {
       throw new Error(
         'TELEGRAM_TEST_CHAT_ID is not set. Please provide a valid chat ID in the environment variables.'
       );
@@ -200,7 +200,7 @@ export class TelegramTestSuite implements TestSuite {
       if (!this.messageManager) throw new Error('MessageManager not initialized.');
 
       const chatId = this.validateChatId(runtime);
-      const fileId = await this.getFileId(chatId, TEST_IMAGE_URL);
+      const fileId = await this.getFileId(String(chatId), TEST_IMAGE_URL);
 
       const mockMessage = {
         message_id: 12345,

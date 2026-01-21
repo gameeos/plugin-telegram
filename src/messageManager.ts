@@ -18,7 +18,6 @@ import { Markup } from 'telegraf';
 import {
   type TelegramContent,
   TelegramEventTypes,
-  type TelegramMessageSentPayload,
   type TelegramReactionReceivedPayload,
 } from './types';
 import { convertToTelegramButtons, convertMarkdownToTelegram, cleanText } from './utils';
@@ -593,7 +592,6 @@ export class MessageManager {
         name: ctx.from.first_name,
         source: 'telegram',
         channelId: telegramRoomid,
-        serverId: undefined,
         type: channelType,
         worldId: createUniqueUuid(this.runtime, roomId) as UUID,
         worldName: telegramRoomid,
@@ -859,20 +857,25 @@ export class MessageManager {
       }
 
       // Emit both generic and platform-specific message sent events
-      this.runtime.emitEvent(EventType.MESSAGE_SENT, {
-        runtime: this.runtime,
-        message: {
-          content: content,
-        },
-        roomId,
-        source: 'telegram',
-      });
+      if (memories.length > 0) {
+        this.runtime.emitEvent(EventType.MESSAGE_SENT, {
+          runtime: this.runtime,
+          message: memories[0],
+          source: 'telegram',
+        });
+      }
 
       // Also emit platform-specific event
-      this.runtime.emitEvent(TelegramEventTypes.MESSAGE_SENT, {
-        originalMessages: sentMessages,
-        chatId,
-      } as TelegramMessageSentPayload);
+      this.runtime.emitEvent(
+        TelegramEventTypes.MESSAGE_SENT as string,
+        {
+          runtime: this.runtime,
+          source: 'telegram',
+          originalMessages: sentMessages,
+          chatId,
+          message: memories[0],
+        } as any
+      );
 
       return sentMessages;
     } catch (error) {
