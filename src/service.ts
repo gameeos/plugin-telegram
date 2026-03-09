@@ -43,8 +43,13 @@ export class TelegramService extends Service {
    * Constructor for TelegramService class.
    * @param {IAgentRuntime} runtime - The runtime object for the agent.
    */
-  constructor(runtime: IAgentRuntime) {
+  constructor(runtime?: IAgentRuntime) {
     super(runtime);
+    if (!runtime) {
+      this.bot = null;
+      this.messageManager = null;
+      return;
+    }
     logger.debug({ src: 'plugin:telegram', agentId: runtime.agentId }, 'Constructing TelegramService');
 
     // Check if Telegram bot token is available and valid
