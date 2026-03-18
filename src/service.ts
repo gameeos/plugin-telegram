@@ -143,9 +143,9 @@ export class TelegramService extends Service {
    */
   static async stop(runtime: IAgentRuntime) {
     // Implement shutdown if necessary
-    const tgClient = runtime.getService(TELEGRAM_SERVICE_NAME);
+    const tgClient = await runtime.getService(TELEGRAM_SERVICE_NAME);
     if (tgClient) {
-      await tgClient.stop();
+      await (tgClient as TelegramService).stop();
     }
   }
 
@@ -590,7 +590,7 @@ export class TelegramService extends Service {
       id: worldId,
       name: chatTitle,
       agentId: this.runtime.agentId,
-      serverId: chatId as UUID,
+      messageServerId: chatId,
       metadata: {
         source: 'telegram',
         ...(ownerId && { ownership: { ownerId } }),
@@ -614,7 +614,7 @@ export class TelegramService extends Service {
       source: 'telegram',
       type: channelType,
       channelId: chatId,
-      serverId: chatId as UUID,
+      serverId: chatId,
       worldId,
     };
 
@@ -914,7 +914,7 @@ export class TelegramService extends Service {
         source: 'telegram',
         type: ChannelType.GROUP,
         channelId: `${chatId}-${threadId}`,
-        serverId: chatId as UUID,
+        serverId: chatId,
         worldId,
         metadata: {
           threadId: threadId,

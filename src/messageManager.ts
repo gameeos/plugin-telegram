@@ -630,7 +630,7 @@ export class MessageManager {
       };
 
       // Create callback for handling responses
-      const callback: HandlerCallback = async (content: Content, _files?: string[]) => {
+      const callback: HandlerCallback = async (content: Content, _files?: any) => {
         try {
           // If response is from reasoning do not send it.
           if (!content.text) return [];
@@ -680,15 +680,8 @@ export class MessageManager {
         }
       };
 
-      // Use elizaOS.handleMessage if available (unified messaging API with streaming support)
-      // Falls back to direct messageService call for backward compatibility
-      if (this.runtime.hasElizaOS()) {
-        await this.runtime.elizaOS.handleMessage(this.runtime.agentId, memory, {
-          onResponse: async (content) => {
-            await callback(content);
-          },
-        });
-      } else if (this.runtime.messageService) {
+      // Use messageService for handling messages
+      if (this.runtime.messageService) {
         await this.runtime.messageService.handleMessage(this.runtime, memory, callback);
       } else {
         logger.error({ src: 'plugin:telegram', agentId: this.runtime.agentId }, 'Message service is not available');
