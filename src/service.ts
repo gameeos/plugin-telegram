@@ -14,7 +14,7 @@ import {
   logger,
 } from '@elizaos/core';
 import { type Context, Telegraf } from 'telegraf';
-import { type ChatMemberOwner, type ChatMemberAdministrator, type User } from 'telegraf/types';
+import { type ChatMemberOwner, type ChatMemberAdministrator, type User, Message } from 'telegraf/types';
 import { TELEGRAM_SERVICE_NAME } from './constants';
 import { MessageManager } from './messageManager';
 import { TelegramEventTypes, type TelegramWorldPayload } from './types';
@@ -320,6 +320,20 @@ export class TelegramService extends Service {
   private async isGroupAuthorized(ctx: Context): Promise<boolean> {
     const chatId = ctx.chat?.id.toString();
     if (!chatId) return false;
+
+    if (this.runtime.character.settings?.respondOnlyWhenMentioned) {
+      const botUsername = ctx.botInfo.username;
+      const msg = ctx.message as Message.TextMessage;
+      const text = msg.text || (ctx.message as Message.CaptionableMessage).caption || '';
+      const entities = ctx.entities() || [];
+
+      const isMentioned = entities.some(
+        e => e.type === 'mention' && text.substring(e.offset, e.offset + e.length) === `@${botUsername}`
+      );
+      const isReplyToBot = msg.reply_to_message?.from?.id === ctx.botInfo.id;
+
+      if (!isMentioned && !isReplyToBot) return false;
+    }
 
     const allowedChats = this.runtime.getSetting('TELEGRAM_ALLOWED_CHATS');
     if (!allowedChats) {
